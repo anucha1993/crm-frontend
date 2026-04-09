@@ -188,6 +188,12 @@ export default function OrderDetailPage() {
   const [cancellingInvoice, setCancellingInvoice] = useState<OrderInvoice | null>(null);
   const [cancelInvoiceReason, setCancelInvoiceReason] = useState("");
 
+  // Order items editing
+  const [editingItems, setEditingItems] = useState(false);
+  const [editItems, setEditItems] = useState<OrderItem[]>([]);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editWarnings, setEditWarnings] = useState<{ type: string; message: string }[]>([]);
+
   const fetchOrder = useCallback(async () => {
     if (!token) return;
     try {
@@ -485,6 +491,78 @@ export default function OrderDetailPage() {
     window.open(`${process.env.NEXT_PUBLIC_API_URL}/deliveries/${deliveryId}/pdf?token=${token}`, '_blank');
   };
 
+  // Order items editing
+  const startEditItems = () => {
+    if (!order) return;
+    setEditItems(order.items.map(it => ({ ...it })));
+    setEditingItems(true);
+  };
+
+  const cancelEditItems = () => {
+    setEditingItems(false);
+    setEditItems([]);
+  };
+
+  const updateEditItem = (idx: number, field: string, value: string | number | null) => {
+    setEditItems(prev => {
+      const updated = [...prev];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (updated[idx] as any)[field] = value;
+      const item = updated[idx];
+      const qty = Number(item.quantity) || 0;
+      const price = Number(item.unit_price) || 0;
+      const thickness = Number(item.thickness) || 0;
+      const length = Number(item.length) || 0;
+      if (thickness && length > 0) {
+        updated[idx].amount = String(thickness * length * qty * price);
+      } else {
+        updated[idx].amount = String(qty * price);
+      }
+      return updated;
+    });
+  };
+
+  const addEditItem = () => {
+    setEditItems(prev => [...prev, { id: 0, product_id: null, description: "", quantity: "1", unit: "ชิ้น", unit_price: "0", thickness: null, length: null, amount: "0" }]);
+  };
+
+  const removeEditItem = (idx: number) => {
+    setEditItems(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const saveEditItems = async () => {
+    if (!order || !token) return;
+    setEditSaving(true);
+    try {
+      const payload = {
+        items: editItems.filter(it => it.description.trim()).map(it => ({
+          ...(it.id ? { id: it.id } : {}),
+          product_id: it.product_id,
+          thickness: it.thickness ? Number(it.thickness) : null,
+          length: it.length ? Number(it.length) : null,
+          description: it.description,
+          quantity: Number(it.quantity),
+          unit: it.unit,
+          unit_price: Number(it.unit_price),
+        })),
+        discount_type: order.discount_type,
+        discount_value: Number(order.discount_value),
+        vat_rate: Number(order.vat_rate),
+      };
+      const res = await api.put<{ order: Order; warnings?: { type: string; message: string }[] }>(`/orders/${order.id}`, payload, token);
+      setOrder(res.order);
+      setEditingItems(false);
+      setEditItems([]);
+      if (res.warnings && res.warnings.length > 0) {
+        setEditWarnings(res.warnings);
+      }
+    } catch (err) {
+      if (err instanceof ApiError) alert(err.errors ? Object.values(err.errors).flat().join("\n") : err.message);
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
   if (loading) return <><Header title="คำสั่งซื้อ" /><div className="p-12 text-center text-gray-400">กำลังโหลด...</div></>;
   if (!order) return null;
 
@@ -614,8 +692,26 @@ export default function OrderDetailPage() {
 
                 {/* Items table */}
                 <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                  <div className="px-5 py-3 border-b border-gray-100">
+                  <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
                     <h3 className="text-sm font-semibold text-gray-800">รายการสินค้า</h3>
+                    {!editingItems && order.status !== "cancelled" && (
+                      <button onClick={startEditItems} className="flex items-center gap-1 px-3 py-1.5 text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors">
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                        แก้ไข
+                      </button>
+                    )}
+                    {editingItems && (
+                      <div className="flex items-center gap-2">
+                        <button onClick={addEditItem} className="flex items-center gap-1 px-3 py-1.5 text-xs bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors">
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                          เพิ่มรายการ
+                        </button>
+                        <button onClick={cancelEditItems} className="px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors">ยกเลิก</button>
+                        <button onClick={saveEditItems} disabled={editSaving} className="px-3 py-1.5 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50">
+                          {editSaving ? "กำลังบันทึก..." : "บันทึก"}
+                        </button>
+                      </div>
+                    )}
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
@@ -628,27 +724,57 @@ export default function OrderDetailPage() {
                           <th className="text-right px-4 py-2.5 font-medium text-gray-500">จำนวน</th>
                           <th className="text-right px-4 py-2.5 font-medium text-gray-500">ราคา/หน่วย</th>
                           <th className="text-right px-4 py-2.5 font-medium text-gray-500">รวม</th>
+                          {editingItems && <th className="w-8"></th>}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
-                        {order.items.map((item, i) => (
-                          <tr key={item.id}>
-                            <td className="px-4 py-3 text-gray-400">{i + 1}</td>
-                            <td className="px-4 py-3">
-                              <div className="font-medium text-gray-800">{item.description}</div>
-                              {item.product && <div className="text-xs text-gray-400">{item.product.code}</div>}
-                            </td>
-                            <td className="px-4 py-3 text-right text-gray-600">{item.thickness ? Number(item.thickness).toFixed(2) : "-"}</td>
-                            <td className="px-4 py-3 text-right text-gray-600">
-                              {item.length ? (
-                                <>{Number(item.length).toFixed(2)} {item.product?.sizes?.[0]?.length_unit || "เมตร"}</>
-                              ) : "-"}
-                            </td>
-                            <td className="px-4 py-3 text-right text-gray-600">{Number(item.quantity).toLocaleString()} {item.unit}</td>
-                            <td className="px-4 py-3 text-right text-gray-600">{formatCurrency(item.unit_price)}</td>
-                            <td className="px-4 py-3 text-right font-medium text-gray-800">{formatCurrency(item.amount)}</td>
-                          </tr>
-                        ))}
+                        {editingItems ? (
+                          editItems.map((item, i) => (
+                            <tr key={i}>
+                              <td className="px-4 py-2 text-gray-400">{i + 1}</td>
+                              <td className="px-4 py-2">
+                                <input type="text" value={item.description} onChange={(e) => updateEditItem(i, "description", e.target.value)} className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none" />
+                              </td>
+                              <td className="px-4 py-2">
+                                <input type="number" value={item.thickness ?? ""} onChange={(e) => updateEditItem(i, "thickness", e.target.value ? Number(e.target.value) : null)} className="w-20 px-2 py-1.5 text-sm text-right border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none" step="0.01" />
+                              </td>
+                              <td className="px-4 py-2">
+                                <input type="number" value={item.length ?? ""} onChange={(e) => updateEditItem(i, "length", e.target.value ? Number(e.target.value) : null)} className="w-20 px-2 py-1.5 text-sm text-right border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none" step="0.01" />
+                              </td>
+                              <td className="px-4 py-2">
+                                <input type="number" value={item.quantity} onChange={(e) => updateEditItem(i, "quantity", e.target.value)} className="w-20 px-2 py-1.5 text-sm text-right border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none" min="0.01" step="0.01" />
+                              </td>
+                              <td className="px-4 py-2">
+                                <input type="number" value={item.unit_price} onChange={(e) => updateEditItem(i, "unit_price", e.target.value)} className="w-24 px-2 py-1.5 text-sm text-right border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none" min="0" step="0.01" />
+                              </td>
+                              <td className="px-4 py-2 text-right font-medium text-gray-800">{formatCurrency(item.amount)}</td>
+                              <td className="px-2 py-2">
+                                <button onClick={() => removeEditItem(i)} className="p-1 text-gray-400 hover:text-red-500 transition-colors" title="ลบรายการ">
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                </button>
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          order.items.map((item, i) => (
+                            <tr key={item.id}>
+                              <td className="px-4 py-3 text-gray-400">{i + 1}</td>
+                              <td className="px-4 py-3">
+                                <div className="font-medium text-gray-800">{item.description}</div>
+                                {item.product && <div className="text-xs text-gray-400">{item.product.code}</div>}
+                              </td>
+                              <td className="px-4 py-3 text-right text-gray-600">{item.thickness ? Number(item.thickness).toFixed(2) : "-"}</td>
+                              <td className="px-4 py-3 text-right text-gray-600">
+                                {item.length ? (
+                                  <>{Number(item.length).toFixed(2)} {item.product?.sizes?.[0]?.length_unit || "เมตร"}</>
+                                ) : "-"}
+                              </td>
+                              <td className="px-4 py-3 text-right text-gray-600">{Number(item.quantity).toLocaleString()} {item.unit}</td>
+                              <td className="px-4 py-3 text-right text-gray-600">{formatCurrency(item.unit_price)}</td>
+                              <td className="px-4 py-3 text-right font-medium text-gray-800">{formatCurrency(item.amount)}</td>
+                            </tr>
+                          ))
+                        )}
                       </tbody>
                     </table>
                   </div>
@@ -1230,6 +1356,38 @@ export default function OrderDetailPage() {
               <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-200">
                 <button onClick={() => setCancellingInvoice(null)} className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">ยกเลิก</button>
                 <button onClick={handleCancelInvoice} disabled={!cancelInvoiceReason.trim()} className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50">ยืนยันยกเลิก</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Edit Warnings Modal */}
+        {editWarnings.length > 0 && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
+                  <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-800">บันทึกสำเร็จ — ข้อสังเกตเอกสารที่เกี่ยวข้อง</h3>
+                  <p className="text-sm text-gray-500">กรุณาตรวจสอบเอกสารที่เกี่ยวข้องให้สอดคล้อง</p>
+                </div>
+              </div>
+              <div className="space-y-2 mb-6">
+                {editWarnings.map((w, i) => (
+                  <div key={i} className={`flex items-start gap-2 px-3 py-2 rounded-lg text-sm ${w.type === 'warning' ? 'bg-amber-50 text-amber-800' : 'bg-blue-50 text-blue-800'}`}>
+                    <span className="mt-0.5">{w.type === 'warning' ? '⚠️' : 'ℹ️'}</span>
+                    <span>{w.message}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="flex justify-end">
+                <button onClick={() => setEditWarnings([])} className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
+                  รับทราบ
+                </button>
               </div>
             </div>
           </div>

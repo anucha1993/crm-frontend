@@ -65,6 +65,8 @@ export default function QuotationFormPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(!!isEdit);
+  const [saveWarnings, setSaveWarnings] = useState<{ type: string; message: string }[]>([]);
+  const [linkedOrder, setLinkedOrder] = useState<{ id: number; order_number: string } | null>(null);
 
   const inputClass = "w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none text-sm";
   const labelClass = "block text-sm font-medium text-gray-700 mb-1";
@@ -282,7 +284,12 @@ export default function QuotationFormPage() {
         })),
       };
       if (isEdit) {
-        await api.put(`/quotations/${quotationId}`, payload, token!);
+        const res = await api.put<{ quotation: Record<string, unknown>; warnings?: { type: string; message: string }[]; linked_order?: { id: number; order_number: string } | null }>(`/quotations/${quotationId}`, payload, token!);
+        if (res.warnings && res.warnings.length > 0) {
+          setSaveWarnings(res.warnings);
+          setLinkedOrder(res.linked_order || null);
+          return; // Don't navigate — show warnings modal
+        }
       } else {
         await api.post("/quotations", payload, token!);
       }
@@ -699,6 +706,49 @@ export default function QuotationFormPage() {
             <div className="flex justify-end gap-3 mt-6 pt-4 border-t">
               <button onClick={() => setShowCustomerModal(false)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">ยกเลิก</button>
               <button onClick={handleSaveCustomer} className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">บันทึกลูกค้า</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Warnings Modal */}
+      {saveWarnings.length > 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
+                <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-gray-800">บันทึกสำเร็จ — ข้อสังเกตเอกสารที่เกี่ยวข้อง</h3>
+                <p className="text-sm text-gray-500">กรุณาตรวจสอบเอกสารที่เกี่ยวข้องให้สอดคล้อง</p>
+              </div>
+            </div>
+            <div className="space-y-2 mb-6">
+              {saveWarnings.map((w, i) => (
+                <div key={i} className={`flex items-start gap-2 px-3 py-2 rounded-lg text-sm ${w.type === 'warning' ? 'bg-amber-50 text-amber-800' : 'bg-blue-50 text-blue-800'}`}>
+                  <span className="mt-0.5">{w.type === 'warning' ? '⚠️' : 'ℹ️'}</span>
+                  <span>{w.message}</span>
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-end gap-3">
+              {linkedOrder && (
+                <button
+                  onClick={() => window.open(`/orders/${linkedOrder.id}`, '_blank')}
+                  className="px-4 py-2 text-sm border border-blue-300 text-blue-700 rounded-lg hover:bg-blue-50 transition-colors"
+                >
+                  ดูคำสั่งซื้อ {linkedOrder.order_number}
+                </button>
+              )}
+              <button
+                onClick={() => { setSaveWarnings([]); router.push("/quotations"); }}
+                className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+              >
+                รับทราบ
+              </button>
             </div>
           </div>
         </div>
