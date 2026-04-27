@@ -1,0 +1,13 @@
+# Plesk Node.js (Phusion Passenger) configuration
+# This forces Apache to delegate ALL requests to the Node.js app (server.js).
+
+# Disable directory listing & default index lookup
+DirectoryIndex disabled
+Options -Indexes -MultiViews
+
+# Let Passenger handle every request
+PassengerEnabled on
+
+# Make sure unmatched URLs go to Node, not Apache
+RewriteEngine On
+RewriteRule ^ - [L]
