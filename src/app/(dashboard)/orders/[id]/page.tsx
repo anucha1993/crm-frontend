@@ -153,13 +153,13 @@ export default function OrderDetailPage() {
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentIsDeposit, setPaymentIsDeposit] = useState(false);
   const [paymentNotes, setPaymentNotes] = useState("");
-  const [slipFile, setSlipFile] = useState<File | null>(null);
+  const [slipFiles, setSlipFiles] = useState<File[]>([]);
   const [paymentSaving, setPaymentSaving] = useState(false);
 
-  // Slip verification
-  const [slipVerifying, setSlipVerifying] = useState(false);
+  // Slip verification (multi)
+  const [slipVerifying, setSlipVerifying] = useState<Record<number, boolean>>({});
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [slipResult, setSlipResult] = useState<{ code: string; message?: string; data?: any } | null>(null);
+  const [slipResults, setSlipResults] = useState<Record<number, { code: string; message?: string; data?: any }>>({});
 
   // Reject modal
   const [rejectingPayment, setRejectingPayment] = useState<Payment | null>(null);
@@ -233,27 +233,68 @@ export default function OrderDetailPage() {
     return Math.min(100, Math.round((paid / total) * 100));
   };
 
-  // Slip verification on file select
-  const handleSlipFileChange = async (file: File | null) => {
-    setSlipFile(file);
-    setSlipResult(null);
-    if (!file || !token) return;
-    setSlipVerifying(true);
-    try {
-      const formData = new FormData();
-      formData.append('slip_image', file);
-      if (paymentAmount) formData.append('amount', paymentAmount);
-      const result = await api.upload<{ code: string; message?: string; data?: Record<string, unknown> }>('/payments/verify-slip', formData, token);
-      setSlipResult(result);
-      // Auto-fill amount from slip
-      if (result.data?.amount) {
-        setPaymentAmount(String(result.data.amount));
+  // Slip verification on file select (multi)
+  const handleSlipFilesAdd = async (files: FileList | null) => {
+    if (!files || files.length === 0 || !token) return;
+    const newFiles = Array.from(files);
+    const startIndex = slipFiles.length;
+    setSlipFiles((prev) => [...prev, ...newFiles]);
+
+    // Verify each new file
+    for (let i = 0; i < newFiles.length; i++) {
+      const fileIndex = startIndex + i;
+      const file = newFiles[i];
+      setSlipVerifying((prev) => ({ ...prev, [fileIndex]: true }));
+      try {
+        const formData = new FormData();
+        formData.append('slip_image', file);
+        if (paymentAmount) formData.append('amount', paymentAmount);
+        const result = await api.upload<{ code: string; message?: string; data?: Record<string, unknown> }>('/payments/verify-slip', formData, token);
+        setSlipResults((prev) => {
+          const updated = { ...prev, [fileIndex]: result };
+          // Sum all verified slip amounts
+          const total = Object.values(updated).reduce((sum, r) => {
+            const amt = r?.data?.amount ? Number(r.data.amount) : 0;
+            return sum + amt;
+          }, 0);
+          if (total > 0) setPaymentAmount(String(total));
+          return updated;
+        });
+      } catch {
+        setSlipResults((prev) => ({ ...prev, [fileIndex]: { code: 'error', message: 'ตรวจสอบสลิปไม่สำเร็จ' } }));
+      } finally {
+        setSlipVerifying((prev) => ({ ...prev, [fileIndex]: false }));
       }
-    } catch {
-      setSlipResult({ code: 'error', message: 'ตรวจสอบสลิปไม่สำเร็จ' });
-    } finally {
-      setSlipVerifying(false);
     }
+  };
+
+  const handleRemoveSlip = (index: number) => {
+    setSlipFiles((prev) => prev.filter((_, i) => i !== index));
+    // Rebuild results & verifying maps with shifted indices, recalculate total
+    setSlipResults((prev) => {
+      const next: Record<number, typeof prev[number]> = {};
+      Object.keys(prev).forEach((k) => {
+        const ki = Number(k);
+        if (ki < index) next[ki] = prev[ki];
+        else if (ki > index) next[ki - 1] = prev[ki];
+      });
+      // Recalculate total amount from remaining slips
+      const total = Object.values(next).reduce((sum, r) => {
+        const amt = r?.data?.amount ? Number(r.data.amount) : 0;
+        return sum + amt;
+      }, 0);
+      setPaymentAmount(total > 0 ? String(total) : '');
+      return next;
+    });
+    setSlipVerifying((prev) => {
+      const next: Record<number, boolean> = {};
+      Object.keys(prev).forEach((k) => {
+        const ki = Number(k);
+        if (ki < index) next[ki] = prev[ki];
+        else if (ki > index) next[ki - 1] = prev[ki];
+      });
+      return next;
+    });
   };
 
   const SLIP_CODES: Record<string, { label: string; color: string }> = {
@@ -278,12 +319,13 @@ export default function OrderDetailPage() {
       formData.append("amount", paymentAmount);
       formData.append("is_deposit", paymentIsDeposit ? "1" : "0");
       if (paymentNotes) formData.append("notes", paymentNotes);
-      if (slipFile) formData.append("slip_image", slipFile);
-      const result = await api.upload<{ payment: Payment }>(`/orders/${order.id}/payments`, formData, token);
+      slipFiles.forEach((file) => formData.append("slip_images[]", file));
+      const result = await api.upload<{ payments: Payment[] }>(`/orders/${order.id}/payments`, formData, token);
 
-      // Show slip verification result
-      const p = result.payment;
-      if (p.slip_image && p.method === 'transfer') {
+      // Show slip verification results summary
+      const payments = result.payments;
+      const transferPayments = payments.filter(p => p.slip_image && p.method === 'transfer');
+      if (transferPayments.length > 0) {
         const SLIP_CODES: Record<string, string> = {
           '200000': 'พบข้อมูลสลิปในระบบธนาคาร',
           '200200': 'สลิปถูกต้อง',
@@ -295,15 +337,13 @@ export default function OrderDetailPage() {
           '200501': 'สลิปซ้ำ',
           'error': 'ตรวจสอบสลิปไม่สำเร็จ',
         };
-        const code = p.slip_status_code || '';
-        const msg = SLIP_CODES[code] || `รหัส: ${code}`;
-        if (p.slip_verified) {
-          alert(`✅ ตรวจสอบสลิปสำเร็จ: ${msg}\nRef: ${p.slip_ref || '-'}\nผู้โอน: ${p.sender_name || '-'}\nจำนวน: ${p.transfer_amount ? Number(p.transfer_amount).toLocaleString('th-TH', { minimumFractionDigits: 2 }) + ' บาท' : '-'}`);
-        } else if (code && code !== 'error') {
-          alert(`⚠️ ผลตรวจสอบสลิป: ${msg}`);
-        } else if (code === 'error') {
-          alert(`⚠️ ${msg} — กรุณาตรวจสอบการตั้งค่า Slip2Go`);
-        }
+        const lines = transferPayments.map((p, i) => {
+          const code = p.slip_status_code || '';
+          const msg = SLIP_CODES[code] || `รหัส: ${code}`;
+          const icon = p.slip_verified ? '✅' : '⚠️';
+          return `${icon} สลิป ${i + 1}: ${msg}`;
+        });
+        alert(lines.join('\n'));
       }
 
       setShowPaymentForm(false);
@@ -311,8 +351,8 @@ export default function OrderDetailPage() {
       setPaymentAmount("");
       setPaymentIsDeposit(false);
       setPaymentNotes("");
-      setSlipFile(null);
-      setSlipResult(null);
+      setSlipFiles([]);
+      setSlipResults({});
       fetchOrder();
       fetchTimeline();
     } catch (err) {
@@ -1135,44 +1175,60 @@ export default function OrderDetailPage() {
                     <input
                       type="file"
                       accept="image/jpeg,image/png"
-                      onChange={(e) => handleSlipFileChange(e.target.files?.[0] || null)}
+                      multiple
+                      onChange={(e) => handleSlipFilesAdd(e.target.files)}
                       className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-green-50 file:text-green-700 hover:file:bg-green-100"
                     />
-                    {slipVerifying && (
-                      <div className="mt-2 flex items-center gap-2 text-sm text-blue-600">
-                        <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
-                        กำลังตรวจสอบสลิป...
+                    {slipFiles.length > 0 && (
+                      <div className="mt-2 space-y-2 max-h-60 overflow-y-auto">
+                        {slipFiles.map((file, idx) => {
+                          const verifying = slipVerifying[idx];
+                          const result = slipResults[idx];
+                          const code = result?.code || '';
+                          const info = SLIP_CODES[code] || null;
+                          const isSuccess = code === '200000' || code === '200200';
+                          const d = result?.data;
+                          return (
+                            <div key={idx} className={`rounded-lg border p-3 text-sm ${info ? info.color : 'border-gray-200 bg-gray-50'}`}>
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2 font-medium text-gray-700 min-w-0">
+                                  <svg className="w-4 h-4 flex-shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                                  <span className="truncate">{file.name}</span>
+                                </div>
+                                <button onClick={() => handleRemoveSlip(idx)} className="ml-2 p-1 hover:bg-red-100 rounded text-red-400 hover:text-red-600 flex-shrink-0" title="ลบสลิป">
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                </button>
+                              </div>
+                              {verifying && (
+                                <div className="mt-2 flex items-center gap-2 text-blue-600">
+                                  <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                                  กำลังตรวจสอบ...
+                                </div>
+                              )}
+                              {result && !verifying && info && (
+                                <>
+                                  <div className="mt-2 flex items-center gap-1.5 font-medium">
+                                    {isSuccess ? (
+                                      <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                    ) : (
+                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M12 3a9 9 0 100 18 9 9 0 000-18z" /></svg>
+                                    )}
+                                    {info.label}
+                                  </div>
+                                  {d && (
+                                    <div className="mt-1 space-y-0.5 text-xs text-gray-700">
+                                      {d.transRef && <div><span className="text-gray-500">Ref:</span> {d.transRef}</div>}
+                                      {d.amount && <div><span className="text-gray-500">จำนวนเงิน:</span> {Number(d.amount).toLocaleString('th-TH', { minimumFractionDigits: 2 })} บาท</div>}
+                                      {d.sender?.account?.name?.th && <div><span className="text-gray-500">ผู้โอน:</span> {d.sender.account.name.th}</div>}
+                                    </div>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
-                    {slipResult && !slipVerifying && (() => {
-                      const code = slipResult.code || 'error';
-                      const info = SLIP_CODES[code] || SLIP_CODES['error'];
-                      const isSuccess = code === '200000' || code === '200200';
-                      const d = slipResult.data;
-                      return (
-                        <div className={`mt-2 rounded-lg border p-3 text-sm ${info.color}`}>
-                          <div className="flex items-center gap-1.5 font-medium">
-                            {isSuccess ? (
-                              <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                            ) : (
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M12 3a9 9 0 100 18 9 9 0 000-18z" /></svg>
-                            )}
-                            {info.label}
-                          </div>
-                          {d && (
-                            <div className="mt-2 space-y-1 text-xs text-gray-700">
-                              {d.transRef && <div><span className="text-gray-500">Ref:</span> {d.transRef}</div>}
-                              {d.amount && <div><span className="text-gray-500">จำนวนเงิน:</span> {Number(d.amount).toLocaleString('th-TH', { minimumFractionDigits: 2 })} บาท</div>}
-                              {d.dateTime && <div><span className="text-gray-500">วันที่โอน:</span> {d.dateTime}</div>}
-                              {d.sender?.account?.name?.th && <div><span className="text-gray-500">ผู้โอน:</span> {d.sender.account.name.th}</div>}
-                              {d.sender?.bank?.name && <div><span className="text-gray-500">ธนาคารผู้โอน:</span> {d.sender.bank.name}{d.sender.account?.bank?.account ? ` (${d.sender.account.bank.account})` : ''}</div>}
-                              {d.receiver?.account?.name?.th && <div><span className="text-gray-500">ผู้รับ:</span> {d.receiver.account.name.th}</div>}
-                              {d.receiver?.bank?.name && <div><span className="text-gray-500">ธนาคารผู้รับ:</span> {d.receiver.bank.name}{d.receiver.account?.bank?.account ? ` (${d.receiver.account.bank.account})` : ''}</div>}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })()}
                   </div>
                 )}
                 <div>

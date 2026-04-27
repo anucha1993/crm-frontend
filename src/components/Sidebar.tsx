@@ -5,11 +5,14 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 
+type NavChild = { href: string; label: string; permission?: string };
+
 type NavItem = {
   href: string;
   label: string;
   icon: React.ReactNode;
-  children?: { href: string; label: string }[];
+  permission?: string;
+  children?: NavChild[];
 };
 
 const navItems: NavItem[] = [
@@ -31,13 +34,14 @@ const navItems: NavItem[] = [
       </svg>
     ),
     children: [
-      { href: "/customers", label: "ลูกค้า" },
-      { href: "/customer-levels", label: "ระดับลูกค้า" },
+      { href: "/customers", label: "ลูกค้า", permission: "customers.view" },
+      { href: "/customer-levels", label: "ระดับลูกค้า", permission: "customer-levels.view" },
     ],
   },
   {
     href: "/quotations",
     label: "ใบเสนอราคา",
+    permission: "quotations.view",
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -54,6 +58,7 @@ const navItems: NavItem[] = [
   {
     href: "/orders",
     label: "คำสั่งซื้อ",
+    permission: "orders.view",
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
@@ -69,6 +74,7 @@ const navItems: NavItem[] = [
   {
     href: "/payments",
     label: "การชำระเงิน",
+    permission: "payments.view",
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
@@ -85,6 +91,7 @@ const navItems: NavItem[] = [
   {
     href: "/deliveries",
     label: "ใบส่งสินค้า",
+    permission: "deliveries.view",
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m-4 0a2 2 0 114 0m6 0a2 2 0 104 0m-4 0a2 2 0 114 0" />
@@ -102,6 +109,7 @@ const navItems: NavItem[] = [
   {
     href: "/invoices",
     label: "ใบกำกับภาษี",
+    permission: "invoices.view",
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z" />
@@ -122,8 +130,8 @@ const navItems: NavItem[] = [
       </svg>
     ),
     children: [
-      { href: "/products", label: "สินค้า" },
-      { href: "/categories", label: "หมวดหมู่" },
+      { href: "/products", label: "สินค้า", permission: "products.view" },
+      { href: "/categories", label: "หมวดหมู่", permission: "categories.view" },
     ],
   },
   {
@@ -135,13 +143,14 @@ const navItems: NavItem[] = [
       </svg>
     ),
     children: [
-      { href: "/users", label: "ผู้ใช้งาน" },
-      { href: "/roles", label: "บทบาท / สิทธิ์" },
+      { href: "/users", label: "ผู้ใช้งาน", permission: "users.view" },
+      { href: "/roles", label: "บทบาท / สิทธิ์", permission: "roles.view" },
     ],
   },
   {
     href: "/vehicle-types",
     label: "จัดการรถขนส่ง",
+    permission: "vehicle-types.view",
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h8m-8 5h4m-4 4h8M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z" />
@@ -149,8 +158,28 @@ const navItems: NavItem[] = [
     ),
   },
   {
+    href: "/reports",
+    label: "รายงาน",
+    permission: "reports.view",
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+      </svg>
+    ),
+    children: [
+      { href: "/reports/sales-by-seller", label: "ยอดขายตามผู้ขาย" },
+      { href: "/reports/sales-by-customer", label: "ยอดขายตามลูกค้า" },
+      { href: "/reports/sales-by-product", label: "ยอดขายตามสินค้า" },
+      { href: "/reports/monthly-sales", label: "ยอดขายรายเดือน" },
+      { href: "/reports/ar-aging", label: "ยอดค้างชำระ" },
+      { href: "/reports/invoices", label: "ใบกำกับภาษี" },
+      { href: "/reports/inactive-customers", label: "ลูกค้าไม่เคลื่อนไหว" },
+    ],
+  },
+  {
     href: "/settings",
     label: "ตั้งค่า",
+    permission: "settings.view",
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -168,15 +197,32 @@ export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user, logout } = useAuth();
+  const { user, logout, hasPermission } = useAuth();
   const currentUrl = pathname + (searchParams.toString() ? `?${searchParams.toString()}` : '');
+
+  // Filter nav items by permission
+  const visibleNavItems = navItems
+    .map((item) => {
+      if (item.children) {
+        const visibleChildren = item.children.filter(
+          (child) => !child.permission || hasPermission(child.permission)
+        );
+        if (visibleChildren.length === 0) return null;
+        // If parent has permission, also enforce it
+        if (item.permission && !hasPermission(item.permission)) return null;
+        return { ...item, children: visibleChildren };
+      }
+      if (item.permission && !hasPermission(item.permission)) return null;
+      return item;
+    })
+    .filter((i): i is NavItem => i !== null);
 
   // Determine which menus should be open based on current path
   const getInitialOpenMenus = () => {
     const open: Record<string, boolean> = {};
-    navItems.forEach((item) => {
+    visibleNavItems.forEach((item) => {
       if (item.children) {
-        const isInSection = item.children.some((child) => pathname.startsWith(child.href));
+        const isInSection = item.children.some((child) => pathname.startsWith(child.href.split('?')[0]));
         if (isInSection) open[item.href] = true;
       }
     });
@@ -209,7 +255,7 @@ export default function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-        {navItems.map((item) => {
+        {visibleNavItems.map((item) => {
           if (item.children) {
             const isInSection = item.children.some((child) => pathname.startsWith(child.href));
             const isOpen = openMenus[item.href] ?? false;

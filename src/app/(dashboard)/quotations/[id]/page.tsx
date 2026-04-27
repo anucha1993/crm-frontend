@@ -187,7 +187,7 @@ export default function QuotationFormPage() {
       const thickness = product.thickness ? Number(product.thickness) : firstSize?.thickness ? Number(firstSize.thickness) : null;
       const length = product.length ? Number(product.length) : firstSize?.length ? Number(firstSize.length) : null;
       const amount = calcItemAmount(thickness, length, it.quantity, price);
-      return { ...it, product_id: product.id, description: "", unit: product.unit || "ชิ้น", unit_price: price, thickness, length, amount };
+      return { ...it, product_id: product.id, description: it.description, unit: product.unit || "ชิ้น", unit_price: price, thickness, length, amount };
     }));
   };
 
@@ -260,7 +260,7 @@ export default function QuotationFormPage() {
   // Save quotation
   const handleSave = async () => {
     if (!customerId) { setError("กรุณาเลือกลูกค้า"); return; }
-    if (items.length === 0 || !items.some(it => it.description.trim())) { setError("กรุณาเพิ่มรายการสินค้าอย่างน้อย 1 รายการ"); return; }
+    if (items.length === 0 || !items.some(it => it.product_id || it.description.trim())) { setError("กรุณาเพิ่มรายการสินค้าอย่างน้อย 1 รายการ"); return; }
     setSaving(true);
     setError("");
     try {
@@ -272,7 +272,7 @@ export default function QuotationFormPage() {
         discount_type: discountType,
         discount_value: discountValue,
         vat_rate: includeVat ? vatRate : 0,
-        items: items.filter(it => it.description.trim()).map(it => ({
+        items: items.filter(it => it.product_id || it.description.trim()).map(it => ({
           ...(it.id ? { id: it.id } : {}),
           product_id: it.product_id,
           thickness: it.thickness,

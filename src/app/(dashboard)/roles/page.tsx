@@ -22,13 +22,19 @@ interface RoleItem {
 
 const groupLabels: Record<string, string> = {
   customers: "ลูกค้า",
-  deals: "ดีล",
-  tasks: "งาน",
+  "customer-levels": "ระดับลูกค้า",
+  quotations: "ใบเสนอราคา",
+  orders: "คำสั่งซื้อ",
+  payments: "การชำระเงิน",
+  invoices: "ใบกำกับภาษี",
+  deliveries: "ใบส่งสินค้า",
   products: "สินค้า",
   categories: "หมวดหมู่",
+  "vehicle-types": "ประเภทรถขนส่ง",
   reports: "รายงาน",
-  settings: "ตั้งค่า",
   users: "ผู้ใช้",
+  roles: "บทบาท",
+  settings: "ตั้งค่า",
 };
 
 export default function RolesPage() {
