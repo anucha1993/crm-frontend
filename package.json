@@ -6,6 +6,7 @@
     "dev": "next dev --port 2000",
     "build": "next build",
     "start": "next start",
+    "start:plesk": "node server.js",
     "lint": "eslint"
   },
   "dependencies": {
