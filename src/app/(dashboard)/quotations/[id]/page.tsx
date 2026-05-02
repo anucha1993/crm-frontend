@@ -25,7 +25,8 @@ const STATUS_MAP: Record<string, { label: string; color: string }> = {
 const emptyItem: QuotationItem = { product_id: null, description: "", thickness: null, length: null, quantity: 1, unit: "ชิ้น", unit_price: 0, amount: 0 };
 
 export default function QuotationFormPage() {
-  const { token, user } = useAuth();
+  const { token, user, accountType } = useAuth();
+  const isCash = accountType === 'cash';
   const router = useRouter();
   const params = useParams();
   const quotationId = params?.id as string | undefined;
@@ -102,7 +103,7 @@ export default function QuotationFormPage() {
   const fetchQuotation = useCallback(async () => {
     if (!token || !isEdit) return;
     try {
-      const data = await api.get<{ quotation: { id: number; quotation_number: string; customer_id: number; customer_address_id: number | null; status: string; notes: string | null; discount_type: string; discount_value: string; vat_rate: string; customer: Customer; creator?: { id: number; name: string } | null; items: { id: number; product_id: number | null; thickness: string | null; length: string | null; description: string; quantity: string; unit: string; unit_price: string; amount: string }[] } }>(`/quotations/${quotationId}`, token);
+      const data = await api.get<{ quotation: { id: number; quotation_number: string; customer_id: number; customer_address_id: number | null; status: string; notes: string | null; discount_type: string; discount_value: string; vat_rate: string; customer: Customer; creator?: { id: number; name: string } | null; items: { id: number; product_id: number | null; thickness: string | null; length: string | null; description: string; quantity: string; unit: string; unit_price: string; amount: string }[] }; linked_order?: { id: number; order_number: string; status: string } | null }>(`/quotations/${quotationId}`, token);
       const q = data.quotation;
       setQuotationNumber(q.quotation_number);
       setRevisionNumber((q as unknown as { revision_number: number }).revision_number || 0);
@@ -115,8 +116,13 @@ export default function QuotationFormPage() {
       setDiscountType(q.discount_type as "percent" | "amount");
       setDiscountValue(Number(q.discount_value));
       setVatRate(Number(q.vat_rate));
-      setIncludeVat(Number(q.vat_rate) > 0);
+      setIncludeVat(!isCash && Number(q.vat_rate) > 0);
       setItems(q.items.map(it => ({ id: it.id, product_id: it.product_id, thickness: it.thickness ? Number(it.thickness) : null, length: it.length ? Number(it.length) : null, description: it.description, quantity: Number(it.quantity), unit: it.unit, unit_price: Number(it.unit_price), amount: Number(it.amount) })));
+      if (data.linked_order && data.linked_order.status !== 'cancelled') {
+        setLinkedOrder({ id: data.linked_order.id, order_number: data.linked_order.order_number });
+      } else {
+        setLinkedOrder(null);
+      }
     } catch { /* silent */ } finally { setLoading(false); }
   }, [token, isEdit, quotationId]);
 
@@ -271,7 +277,7 @@ export default function QuotationFormPage() {
         notes: notes || null,
         discount_type: discountType,
         discount_value: discountValue,
-        vat_rate: includeVat ? vatRate : 0,
+        vat_rate: isCash ? 0 : (includeVat ? vatRate : 0),
         items: items.filter(it => it.product_id || it.description.trim()).map(it => ({
           ...(it.id ? { id: it.id } : {}),
           product_id: it.product_id,
@@ -309,6 +315,21 @@ export default function QuotationFormPage() {
       <Header title={isEdit ? `แก้ไขใบเสนอราคา ${quotationNumber}${revisionNumber > 0 ? ` (Rev.${String(revisionNumber).padStart(2, '0')})` : ''}` : "สร้างใบเสนอราคา"} />
       <div className="p-6 space-y-6">
         {error && <div className="bg-red-50 text-red-600 text-sm px-4 py-2 rounded-lg">{error}</div>}
+
+        {linkedOrder && (
+          <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-lg text-sm flex items-center justify-between gap-3">
+            <div className="flex items-start gap-2">
+              <svg className="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M5.07 19h13.86c1.54 0 2.5-1.67 1.73-3L13.73 4c-.77-1.33-2.69-1.33-3.46 0L3.34 16c-.77 1.33.19 3 1.73 3z" /></svg>
+              <div>
+                <p className="font-medium">ใบเสนอราคานี้มีคำสั่งซื้อ {linkedOrder.order_number} แล้ว ไม่สามารถแก้ไขได้</p>
+                <p className="text-xs mt-0.5 text-amber-700">หากต้องการแก้ไขรายการ/ราคา กรุณาไปแก้ไขที่คำสั่งซื้อ ระบบจะปรับใบเสนอราคาให้อัตโนมัติ</p>
+              </div>
+            </div>
+            <button onClick={() => router.push(`/orders/${linkedOrder.id}`)} className="px-3 py-1.5 text-xs font-medium text-white bg-amber-600 hover:bg-amber-700 rounded-lg transition-colors flex-shrink-0">
+              ไปที่คำสั่งซื้อ →
+            </button>
+          </div>
+        )}
 
         {/* 2-column layout: Left = Items, Right = Customer */}
         <div className="grid grid-cols-1 xl:grid-cols-[1fr_400px] gap-6">
@@ -406,10 +427,12 @@ export default function QuotationFormPage() {
                   </div>
                   <div className="flex items-center justify-between gap-2 text-sm">
                     <label className="flex items-center gap-2 cursor-pointer">
-                      <input type="checkbox" checked={includeVat} onChange={(e) => setIncludeVat(e.target.checked)} className="w-4 h-4 text-green-600 rounded border-gray-300 focus:ring-green-500" />
+                      <input type="checkbox" checked={includeVat} onChange={(e) => setIncludeVat(e.target.checked)} disabled={isCash} className="w-4 h-4 text-green-600 rounded border-gray-300 focus:ring-green-500 disabled:opacity-50" />
                       <span className="text-gray-500">VAT</span>
                     </label>
-                    {includeVat ? (
+                    {isCash ? (
+                      <span className="text-gray-400 text-xs">บัญชีบิลเงินสด ไม่คิดภาษี</span>
+                    ) : includeVat ? (
                       <>
                         <div className="flex items-center gap-1">
                           <input type="number" value={vatRate} onChange={(e) => setVatRate(Number(e.target.value))} className="w-16 px-2 py-1 text-sm text-right border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-green-500" min="0" max="100" step="0.01" />
@@ -628,7 +651,7 @@ export default function QuotationFormPage() {
                 PDF
               </button>
             )}
-            <button onClick={handleSave} disabled={saving} className="px-6 py-2.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-green-300 font-medium transition-colors">
+            <button onClick={handleSave} disabled={saving || !!linkedOrder} title={linkedOrder ? "ใบเสนอราคาถูกล็อก เนื่องจากมีคำสั่งซื้อแล้ว" : ""} className="px-6 py-2.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed font-medium transition-colors">
               {saving ? "กำลังบันทึก..." : isEdit ? "บันทึกการแก้ไข" : "สร้างใบเสนอราคา"}
             </button>
           </div>

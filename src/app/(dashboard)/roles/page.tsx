@@ -35,6 +35,7 @@ const groupLabels: Record<string, string> = {
   users: "ผู้ใช้",
   roles: "บทบาท",
   settings: "ตั้งค่า",
+  accounts: "บัญชีที่เข้าถึงได้",
 };
 
 export default function RolesPage() {

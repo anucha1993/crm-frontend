@@ -24,7 +24,9 @@ const STATUS_MAP: Record<string, { label: string; color: string }> = {
 };
 
 export default function InvoicesPage() {
-  const { token } = useAuth();
+  const { token, accountType } = useAuth();
+  const isCash = accountType === 'cash';
+  const docLabel = isCash ? 'บิลเงินสด' : 'ใบกำกับภาษี';
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -67,7 +69,7 @@ export default function InvoicesPage() {
 
   return (
     <>
-      <Header title="ใบกำกับภาษี" />
+      <Header title={docLabel} />
       <div className="p-6 space-y-6">
         {/* Filters */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -102,13 +104,13 @@ export default function InvoicesPage() {
           {loading ? (
             <div className="p-12 text-center text-gray-400">กำลังโหลด...</div>
           ) : invoices.length === 0 ? (
-            <div className="p-12 text-center text-gray-400">ไม่พบใบกำกับภาษี</div>
+            <div className="p-12 text-center text-gray-400">ไม่พบ{docLabel}</div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50">
-                    <th className="text-left px-5 py-3 font-medium text-gray-500">เลขที่ใบกำกับภาษี</th>
+                    <th className="text-left px-5 py-3 font-medium text-gray-500">เลขที่{docLabel}</th>
                     <th className="text-left px-5 py-3 font-medium text-gray-500">คำสั่งซื้อ</th>
                     <th className="text-left px-5 py-3 font-medium text-gray-500">ลูกค้า</th>
                     <th className="text-left px-5 py-3 font-medium text-gray-500">สถานะ</th>

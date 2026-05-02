@@ -197,23 +197,30 @@ export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user, logout, hasPermission } = useAuth();
+  const { user, logout, hasPermission, accountType, availableAccounts, clearAccountType } = useAuth();
   const currentUrl = pathname + (searchParams.toString() ? `?${searchParams.toString()}` : '');
+
+  const isCash = accountType === 'cash';
+  const remapLabel = (href: string, label: string): string => {
+    if (!isCash) return label;
+    if (href === '/invoices' || href === '/reports/invoices') return 'บิลเงินสด';
+    return label;
+  };
 
   // Filter nav items by permission
   const visibleNavItems = navItems
     .map((item) => {
       if (item.children) {
-        const visibleChildren = item.children.filter(
-          (child) => !child.permission || hasPermission(child.permission)
-        );
+        const visibleChildren = item.children
+          .filter((child) => !child.permission || hasPermission(child.permission))
+          .map((child) => ({ ...child, label: remapLabel(child.href, child.label) }));
         if (visibleChildren.length === 0) return null;
         // If parent has permission, also enforce it
         if (item.permission && !hasPermission(item.permission)) return null;
-        return { ...item, children: visibleChildren };
+        return { ...item, label: remapLabel(item.href, item.label), children: visibleChildren };
       }
       if (item.permission && !hasPermission(item.permission)) return null;
-      return item;
+      return { ...item, label: remapLabel(item.href, item.label) };
     })
     .filter((i): i is NavItem => i !== null);
 
@@ -330,6 +337,33 @@ export default function Sidebar() {
           );
         })}
       </nav>
+
+      {/* Account switcher */}
+      {accountType && (
+        <div className="px-4 py-3 border-t border-gray-200 bg-gray-50">
+          <p className="text-[10px] uppercase tracking-wider text-gray-400 mb-1.5">บัญชีปัจจุบัน</p>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-lg">{accountType === 'cash' ? '💵' : '🧾'}</span>
+              <span className={`text-sm font-semibold truncate ${accountType === 'cash' ? 'text-emerald-700' : 'text-blue-700'}`}>
+                {accountType === 'cash' ? 'บิลเงินสด' : 'ใบกำกับภาษี'}
+              </span>
+            </div>
+            {availableAccounts.length > 1 && (
+              <button
+                onClick={() => {
+                  clearAccountType();
+                  router.push('/select-account');
+                }}
+                className="text-xs px-2 py-1 rounded-md bg-white border border-gray-300 text-gray-600 hover:bg-gray-100 hover:text-gray-800 transition-colors flex-shrink-0"
+                title="เปลี่ยนบัญชี"
+              >
+                เปลี่ยน
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* User section */}
       <div className="px-4 py-4 border-t border-gray-200">

@@ -1,18 +1,26 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, accountType, availableAccounts } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
-    if (!isLoading && !user) {
+    if (isLoading) return;
+    if (!user) {
       router.replace('/login');
+      return;
     }
-  }, [user, isLoading, router]);
+    // Require account selection (skip on the picker page itself and profile)
+    const isPicker = pathname === '/select-account';
+    if (!accountType && availableAccounts.length > 0 && !isPicker) {
+      router.replace('/select-account');
+    }
+  }, [user, isLoading, accountType, availableAccounts, pathname, router]);
 
   if (isLoading) {
     return (

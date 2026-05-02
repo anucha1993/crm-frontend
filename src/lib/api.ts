@@ -1,5 +1,12 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:7000/api';
 
+const ACCOUNT_TYPE_KEY = 'crm_account_type';
+
+function getAccountTypeHeader(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem(ACCOUNT_TYPE_KEY);
+}
+
 interface RequestOptions extends RequestInit {
   token?: string;
 }
@@ -14,6 +21,11 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
 
   if (token) {
     authHeaders['Authorization'] = `Bearer ${token}`;
+  }
+
+  const accountType = getAccountTypeHeader();
+  if (accountType) {
+    authHeaders['X-Account-Type'] = accountType;
   }
 
   const response = await fetch(`${API_URL}${endpoint}`, {
@@ -58,6 +70,8 @@ export const api = {
   upload: <T>(endpoint: string, formData: FormData, token?: string) => {
     const authHeaders: Record<string, string> = { 'Accept': 'application/json' };
     if (token) authHeaders['Authorization'] = `Bearer ${token}`;
+    const accountType = getAccountTypeHeader();
+    if (accountType) authHeaders['X-Account-Type'] = accountType;
     return fetch(`${API_URL}${endpoint}`, { method: 'POST', headers: authHeaders, body: formData })
       .then(async (res) => {
         if (!res.ok) {

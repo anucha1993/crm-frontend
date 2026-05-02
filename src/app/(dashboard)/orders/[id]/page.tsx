@@ -3,8 +3,23 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Header from "@/components/Header";
+import ProductSearchSelect from "@/components/ProductSearchSelect";
 import { useAuth } from "@/lib/auth-context";
 import { api, ApiError } from "@/lib/api";
+
+interface Product {
+  id: number;
+  code: string;
+  name: string;
+  selling_price: string;
+  unit: string;
+  thickness: string | null;
+  length: string | null;
+  category: { id: number; name: string } | null;
+  steel_type: string | null;
+  side_steel: string | null;
+  sizes?: { id: number; thickness: string | null; length: string | null; length_unit?: string | null }[];
+}
 
 interface OrderItem {
   id: number;
@@ -137,7 +152,10 @@ const METHOD_MAP: Record<string, string> = {
 };
 
 export default function OrderDetailPage() {
-  const { token } = useAuth();
+  const { token, accountType } = useAuth();
+  const isCash = accountType === 'cash';
+  const invoiceLabel = isCash ? 'บิลเงินสด' : 'ใบกำกับภาษี';
+  const invoiceVerb = isCash ? 'ออกบิลเงินสด' : 'ออกใบกำกับภาษี';
   const router = useRouter();
   const params = useParams();
   const orderId = params?.id as string;
@@ -193,6 +211,11 @@ export default function OrderDetailPage() {
   const [editItems, setEditItems] = useState<OrderItem[]>([]);
   const [editSaving, setEditSaving] = useState(false);
   const [editWarnings, setEditWarnings] = useState<{ type: string; message: string }[]>([]);
+  const [editDiscountType, setEditDiscountType] = useState<"percent" | "amount">("amount");
+  const [editDiscountValue, setEditDiscountValue] = useState(0);
+  const [editIncludeVat, setEditIncludeVat] = useState(false);
+  const [editVatRate, setEditVatRate] = useState(7);
+  const [products, setProducts] = useState<Product[]>([]);
 
   const fetchOrder = useCallback(async () => {
     if (!token) return;
@@ -214,7 +237,26 @@ export default function OrderDetailPage() {
     } catch { /* silent */ }
   }, [token, orderId]);
 
-  useEffect(() => { fetchOrder(); fetchTimeline(); }, [fetchOrder, fetchTimeline]);
+  const fetchProducts = useCallback(async () => {
+    if (!token) return;
+    try {
+      const data = await api.get<{ data: Product[] }>("/products?per_page=999", token);
+      setProducts(data.data);
+    } catch { /* silent */ }
+  }, [token]);
+
+  useEffect(() => { fetchOrder(); fetchTimeline(); fetchProducts(); }, [fetchOrder, fetchTimeline, fetchProducts]);
+
+  // Calculate item amount based on thickness/length (same logic as quotation)
+  const calcItemAmount = (thickness: number | null, length: number | null, quantity: number, unitPrice: number) => {
+    if (thickness && thickness > 0) {
+      return Math.round(thickness * (length ?? 1) * quantity * unitPrice * 100) / 100;
+    }
+    if (length && length > 0) {
+      return Math.round(length * quantity * unitPrice * 100) / 100;
+    }
+    return Math.round(quantity * unitPrice * 100) / 100;
+  };
 
   const formatCurrency = (v: string | number) =>
     Number(v).toLocaleString("th-TH", { minimumFractionDigits: 2 });
@@ -495,7 +537,7 @@ export default function OrderDetailPage() {
 
   const handleCreateInvoice = async () => {
     if (!token || !order) return;
-    if (!confirm("ต้องการออกใบกำกับภาษีสำหรับคำสั่งซื้อนี้?")) return;
+    if (!confirm(`ต้องการ${invoiceVerb}สำหรับคำสั่งซื้อนี้?`)) return;
     setInvoiceCreating(true);
     try {
       await api.post(`/orders/${order.id}/invoices`, {}, token);
@@ -534,7 +576,17 @@ export default function OrderDetailPage() {
   // Order items editing
   const startEditItems = () => {
     if (!order) return;
-    setEditItems(order.items.map(it => ({ ...it })));
+    setEditItems(order.items.map(it => {
+      const thickness = it.thickness ? Number(it.thickness) : null;
+      const length = it.length ? Number(it.length) : null;
+      const qty = Number(it.quantity) || 0;
+      const price = Number(it.unit_price) || 0;
+      return { ...it, amount: String(calcItemAmount(thickness, length, qty, price)) };
+    }));
+    setEditDiscountType((order.discount_type as "percent" | "amount") || "amount");
+    setEditDiscountValue(Number(order.discount_value) || 0);
+    setEditVatRate(Number(order.vat_rate) || 7);
+    setEditIncludeVat(!isCash && Number(order.vat_rate) > 0);
     setEditingItems(true);
   };
 
@@ -551,15 +603,37 @@ export default function OrderDetailPage() {
       const item = updated[idx];
       const qty = Number(item.quantity) || 0;
       const price = Number(item.unit_price) || 0;
-      const thickness = Number(item.thickness) || 0;
-      const length = Number(item.length) || 0;
-      if (thickness && length > 0) {
-        updated[idx].amount = String(thickness * length * qty * price);
-      } else {
-        updated[idx].amount = String(qty * price);
-      }
+      const thickness = item.thickness != null && item.thickness !== "" ? Number(item.thickness) : null;
+      const length = item.length != null && item.length !== "" ? Number(item.length) : null;
+      updated[idx].amount = String(calcItemAmount(thickness, length, qty, price));
       return updated;
     });
+  };
+
+  const selectEditProduct = (idx: number, productId: string) => {
+    const product = products.find(p => p.id === Number(productId));
+    if (!product) {
+      updateEditItem(idx, "product_id", null);
+      return;
+    }
+    setEditItems(prev => prev.map((it, i) => {
+      if (i !== idx) return it;
+      const price = Number(product.selling_price);
+      const firstSize = product.sizes?.[0];
+      const thickness = product.thickness ? Number(product.thickness) : firstSize?.thickness ? Number(firstSize.thickness) : null;
+      const length = product.length ? Number(product.length) : firstSize?.length ? Number(firstSize.length) : null;
+      const qty = Number(it.quantity) || 1;
+      const amount = calcItemAmount(thickness, length, qty, price);
+      return {
+        ...it,
+        product_id: product.id,
+        unit: product.unit || "ชิ้น",
+        unit_price: String(price),
+        thickness: thickness != null ? String(thickness) : null,
+        length: length != null ? String(length) : null,
+        amount: String(amount),
+      };
+    }));
   };
 
   const addEditItem = () => {
@@ -570,24 +644,40 @@ export default function OrderDetailPage() {
     setEditItems(prev => prev.filter((_, i) => i !== idx));
   };
 
+  // Edit-mode totals (mirrors quotation page)
+  const editSubtotal = editItems.reduce((sum, it) => {
+    const thickness = it.thickness != null && it.thickness !== "" ? Number(it.thickness) : null;
+    const length = it.length != null && it.length !== "" ? Number(it.length) : null;
+    return sum + calcItemAmount(thickness, length, Number(it.quantity) || 0, Number(it.unit_price) || 0);
+  }, 0);
+  const editDiscountAmount = editDiscountType === "percent" ? Math.round(editSubtotal * editDiscountValue / 100 * 100) / 100 : editDiscountValue;
+  const editAfterDiscount = editSubtotal - editDiscountAmount;
+  const editEffectiveVatRate = editIncludeVat ? editVatRate : 0;
+  const editVatAmount = Math.round(editAfterDiscount * editEffectiveVatRate / 100 * 100) / 100;
+  const editTotal = Math.round((editAfterDiscount + editVatAmount) * 100) / 100;
+
   const saveEditItems = async () => {
     if (!order || !token) return;
+    if (editItems.length === 0 || !editItems.some(it => it.product_id || it.description.trim())) {
+      alert("กรุณาเพิ่มรายการสินค้าอย่างน้อย 1 รายการ");
+      return;
+    }
     setEditSaving(true);
     try {
       const payload = {
-        items: editItems.filter(it => it.description.trim()).map(it => ({
+        items: editItems.filter(it => it.product_id || it.description.trim()).map(it => ({
           ...(it.id ? { id: it.id } : {}),
           product_id: it.product_id,
-          thickness: it.thickness ? Number(it.thickness) : null,
-          length: it.length ? Number(it.length) : null,
+          thickness: it.thickness != null && it.thickness !== "" ? Number(it.thickness) : null,
+          length: it.length != null && it.length !== "" ? Number(it.length) : null,
           description: it.description,
           quantity: Number(it.quantity),
           unit: it.unit,
           unit_price: Number(it.unit_price),
         })),
-        discount_type: order.discount_type,
-        discount_value: Number(order.discount_value),
-        vat_rate: Number(order.vat_rate),
+        discount_type: editDiscountType,
+        discount_value: editDiscountValue,
+        vat_rate: isCash ? 0 : (editIncludeVat ? editVatRate : 0),
       };
       const res = await api.put<{ order: Order; warnings?: { type: string; message: string }[] }>(`/orders/${order.id}`, payload, token);
       setOrder(res.order);
@@ -681,7 +771,7 @@ export default function OrderDetailPage() {
               { key: "detail" as const, label: "รายละเอียด", icon: "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" },
               { key: "payments" as const, label: `การชำระเงิน (${order.payments.length})`, icon: "M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" },
               { key: "deliveries" as const, label: `ใบส่งสินค้า (${order.deliveries?.length || 0})`, icon: "M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m-4 0a2 2 0 114 0m6 0a2 2 0 104 0m-4 0a2 2 0 114 0" },
-              { key: "invoices" as const, label: `ใบกำกับภาษี (${order.invoices?.length || 0})`, icon: "M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z" },
+              { key: "invoices" as const, label: `${invoiceLabel} (${order.invoices?.length || 0})`, icon: "M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z" },
             ]).map((tab) => (
               <button
                 key={tab.key}
@@ -742,10 +832,6 @@ export default function OrderDetailPage() {
                     )}
                     {editingItems && (
                       <div className="flex items-center gap-2">
-                        <button onClick={addEditItem} className="flex items-center gap-1 px-3 py-1.5 text-xs bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors">
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-                          เพิ่มรายการ
-                        </button>
                         <button onClick={cancelEditItems} className="px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors">ยกเลิก</button>
                         <button onClick={saveEditItems} disabled={editSaving} className="px-3 py-1.5 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50">
                           {editSaving ? "กำลังบันทึก..." : "บันทึก"}
@@ -753,84 +839,175 @@ export default function OrderDetailPage() {
                       </div>
                     )}
                   </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-gray-100 bg-gray-50">
-                          <th className="text-left px-4 py-2.5 font-medium text-gray-500 w-8">#</th>
-                          <th className="text-left px-4 py-2.5 font-medium text-gray-500">รายการ</th>
-                          <th className="text-right px-4 py-2.5 font-medium text-gray-500">หนา</th>
-                          <th className="text-right px-4 py-2.5 font-medium text-gray-500">ยาว</th>
-                          <th className="text-right px-4 py-2.5 font-medium text-gray-500">จำนวน</th>
-                          <th className="text-right px-4 py-2.5 font-medium text-gray-500">ราคา/หน่วย</th>
-                          <th className="text-right px-4 py-2.5 font-medium text-gray-500">รวม</th>
-                          {editingItems && <th className="w-8"></th>}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {editingItems ? (
-                          editItems.map((item, i) => (
-                            <tr key={i}>
-                              <td className="px-4 py-2 text-gray-400">{i + 1}</td>
-                              <td className="px-4 py-2">
-                                <input type="text" value={item.description} onChange={(e) => updateEditItem(i, "description", e.target.value)} className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none" />
-                              </td>
-                              <td className="px-4 py-2">
-                                <input type="number" value={item.thickness ?? ""} onChange={(e) => updateEditItem(i, "thickness", e.target.value ? Number(e.target.value) : null)} className="w-20 px-2 py-1.5 text-sm text-right border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none" step="0.01" />
-                              </td>
-                              <td className="px-4 py-2">
-                                <input type="number" value={item.length ?? ""} onChange={(e) => updateEditItem(i, "length", e.target.value ? Number(e.target.value) : null)} className="w-20 px-2 py-1.5 text-sm text-right border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none" step="0.01" />
-                              </td>
-                              <td className="px-4 py-2">
-                                <input type="number" value={item.quantity} onChange={(e) => updateEditItem(i, "quantity", e.target.value)} className="w-20 px-2 py-1.5 text-sm text-right border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none" min="0.01" step="0.01" />
-                              </td>
-                              <td className="px-4 py-2">
-                                <input type="number" value={item.unit_price} onChange={(e) => updateEditItem(i, "unit_price", e.target.value)} className="w-24 px-2 py-1.5 text-sm text-right border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none" min="0" step="0.01" />
-                              </td>
-                              <td className="px-4 py-2 text-right font-medium text-gray-800">{formatCurrency(item.amount)}</td>
-                              <td className="px-2 py-2">
-                                <button onClick={() => removeEditItem(i)} className="p-1 text-gray-400 hover:text-red-500 transition-colors" title="ลบรายการ">
-                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                  {editingItems ? (
+                    <div className="p-5">
+                      <div className="overflow-x-auto overflow-y-visible">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b border-gray-200 bg-gray-50">
+                              <th className="text-left px-3 py-2 font-medium text-gray-500 w-10">#</th>
+                              <th className="text-left px-3 py-2 font-medium text-gray-500 min-w-[200px]">สินค้า</th>
+                              <th className="text-right px-3 py-2 font-medium text-gray-500 w-24">ความหนา</th>
+                              <th className="text-right px-3 py-2 font-medium text-gray-500 w-24">ความยาว</th>
+                              <th className="text-right px-3 py-2 font-medium text-gray-500 w-24">จำนวน</th>
+                              <th className="text-left px-3 py-2 font-medium text-gray-500 w-20">หน่วย</th>
+                              <th className="text-right px-3 py-2 font-medium text-gray-500 w-28">ราคา/หน่วย</th>
+                              <th className="text-right px-3 py-2 font-medium text-gray-500 w-28">จำนวนเงิน</th>
+                              <th className="w-10"></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {editItems.map((item, idx) => {
+                              const selectedProduct = products.find(p => p.id === item.product_id);
+                              const isFloorSlab = selectedProduct?.category?.name?.startsWith("แผ่นพื้น") || false;
+                              const thicknessNum = item.thickness != null && item.thickness !== "" ? Number(item.thickness) : null;
+                              const lengthNum = item.length != null && item.length !== "" ? Number(item.length) : null;
+                              const computedAmount = calcItemAmount(thicknessNum, lengthNum, Number(item.quantity) || 0, Number(item.unit_price) || 0);
+                              return (
+                                <tr key={idx} className="border-b border-gray-100">
+                                  <td className="px-3 py-2 text-gray-400 text-xs align-top pt-3">{idx + 1}</td>
+                                  <td className="px-3 py-2">
+                                    <ProductSearchSelect products={products} value={item.product_id} onChange={(val) => selectEditProduct(idx, val)} />
+                                    <input type="text" value={item.description} onChange={(e) => updateEditItem(idx, "description", e.target.value)} className="w-full mt-1 px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 outline-none" placeholder="รายละเอียด *" />
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    {isFloorSlab ? (
+                                      <input type="number" value={item.thickness ?? ""} onChange={(e) => updateEditItem(idx, "thickness", e.target.value || null)} className="w-full px-2 py-1.5 text-sm text-right border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 outline-none" min="0" step="0.01" placeholder="หนา" />
+                                    ) : (
+                                      <span className="text-gray-300 text-center block">-</span>
+                                    )}
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    <input type="number" value={item.length ?? ""} onChange={(e) => updateEditItem(idx, "length", e.target.value || null)} className="w-full px-2 py-1.5 text-sm text-right border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 outline-none" min="0" step="0.01" placeholder="ยาว" />
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    <input type="number" value={item.quantity} onChange={(e) => updateEditItem(idx, "quantity", e.target.value)} className="w-full px-2 py-1.5 text-sm text-right border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 outline-none" min="0.01" step="0.01" />
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    <input type="text" value={item.unit} onChange={(e) => updateEditItem(idx, "unit", e.target.value)} className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 outline-none" />
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    <input type="number" value={item.unit_price} onChange={(e) => updateEditItem(idx, "unit_price", e.target.value)} className="w-full px-2 py-1.5 text-sm text-right border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 outline-none" min="0" step="0.01" />
+                                  </td>
+                                  <td className="px-3 py-2 text-right font-medium text-gray-700">{formatCurrency(computedAmount)}</td>
+                                  <td className="px-3 py-2">
+                                    {editItems.length > 1 && (
+                                      <button onClick={() => removeEditItem(idx)} className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors">
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                      </button>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                            <tr>
+                              <td colSpan={9} className="px-3 py-2">
+                                <button onClick={addEditItem} className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-green-700 bg-green-50 hover:bg-green-100 rounded-lg transition-colors">
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                                  เพิ่มรายการ
                                 </button>
                               </td>
                             </tr>
-                          ))
-                        ) : (
-                          order.items.map((item, i) => (
-                            <tr key={item.id}>
-                              <td className="px-4 py-3 text-gray-400">{i + 1}</td>
-                              <td className="px-4 py-3">
-                                <div className="font-medium text-gray-800">{item.description}</div>
-                                {item.product && <div className="text-xs text-gray-400">{item.product.code}</div>}
-                              </td>
-                              <td className="px-4 py-3 text-right text-gray-600">{item.thickness ? Number(item.thickness).toFixed(2) : "-"}</td>
-                              <td className="px-4 py-3 text-right text-gray-600">
-                                {item.length ? (
-                                  <>{Number(item.length).toFixed(2)} {item.product?.sizes?.[0]?.length_unit || "เมตร"}</>
-                                ) : "-"}
-                              </td>
-                              <td className="px-4 py-3 text-right text-gray-600">{Number(item.quantity).toLocaleString()} {item.unit}</td>
-                              <td className="px-4 py-3 text-right text-gray-600">{formatCurrency(item.unit_price)}</td>
-                              <td className="px-4 py-3 text-right font-medium text-gray-800">{formatCurrency(item.amount)}</td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                  {/* Totals */}
-                  <div className="border-t border-gray-200 px-5 py-4">
-                    <div className="flex flex-col items-end gap-1 text-sm">
-                      <div className="flex items-center gap-8"><span className="text-gray-500">ยอดรวม:</span><span className="w-32 text-right">{formatCurrency(order.subtotal)}</span></div>
-                      {Number(order.discount_amount) > 0 && (
-                        <div className="flex items-center gap-8"><span className="text-gray-500">ส่วนลด{order.discount_type === "percent" ? ` (${order.discount_value}%)` : ""}:</span><span className="w-32 text-right text-red-500">-{formatCurrency(order.discount_amount)}</span></div>
-                      )}
-                      {Number(order.vat_amount) > 0 && (
-                        <div className="flex items-center gap-8"><span className="text-gray-500">VAT ({order.vat_rate}%):</span><span className="w-32 text-right">{formatCurrency(order.vat_amount)}</span></div>
-                      )}
-                      <div className="flex items-center gap-8 pt-2 border-t border-gray-200 mt-1"><span className="font-semibold text-gray-800">รวมทั้งสิ้น:</span><span className="w-32 text-right font-bold text-lg text-gray-800">{formatCurrency(order.total)}</span></div>
+                          </tbody>
+                        </table>
+                      </div>
+                      {/* Totals editor (matches quotation) */}
+                      <div className="mt-6 flex justify-end">
+                        <div className="w-full max-w-sm space-y-2">
+                          <div className="flex justify-between text-sm">
+                            <span className="text-gray-500">ยอดรวม</span>
+                            <span className="font-medium">{formatCurrency(editSubtotal)}</span>
+                          </div>
+                          <div className="flex items-center justify-between gap-2 text-sm">
+                            <span className="text-gray-500">ส่วนลด</span>
+                            <div className="flex items-center gap-1">
+                              <select value={editDiscountType} onChange={(e) => setEditDiscountType(e.target.value as "percent" | "amount")} className="px-2 py-1 text-xs border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-green-500">
+                                <option value="amount">บาท</option>
+                                <option value="percent">%</option>
+                              </select>
+                              <input type="number" value={editDiscountValue} onChange={(e) => setEditDiscountValue(Number(e.target.value))} className="w-24 px-2 py-1 text-sm text-right border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-green-500" min="0" step="0.01" />
+                            </div>
+                            <span className="font-medium text-red-500">-{formatCurrency(editDiscountAmount)}</span>
+                          </div>
+                          <div className="flex items-center justify-between gap-2 text-sm">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input type="checkbox" checked={editIncludeVat} onChange={(e) => setEditIncludeVat(e.target.checked)} disabled={isCash} className="w-4 h-4 text-green-600 rounded border-gray-300 focus:ring-green-500 disabled:opacity-50" />
+                              <span className="text-gray-500">VAT</span>
+                            </label>
+                            {isCash ? (
+                              <span className="text-gray-400 text-xs">บัญชีบิลเงินสด ไม่คิดภาษี</span>
+                            ) : editIncludeVat ? (
+                              <>
+                                <div className="flex items-center gap-1">
+                                  <input type="number" value={editVatRate} onChange={(e) => setEditVatRate(Number(e.target.value))} className="w-16 px-2 py-1 text-sm text-right border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-green-500" min="0" max="100" step="0.01" />
+                                  <span className="text-xs text-gray-400">%</span>
+                                </div>
+                                <span className="font-medium">+{formatCurrency(editVatAmount)}</span>
+                              </>
+                            ) : (
+                              <span className="text-gray-400 text-xs">ไม่รวม VAT</span>
+                            )}
+                          </div>
+                          <div className="flex justify-between text-base font-bold pt-2 border-t border-gray-200">
+                            <span className="text-gray-700">ยอดสุทธิ</span>
+                            <span className="text-green-700">{formatCurrency(editTotal)} บาท</span>
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b border-gray-100 bg-gray-50">
+                              <th className="text-left px-4 py-2.5 font-medium text-gray-500 w-8">#</th>
+                              <th className="text-left px-4 py-2.5 font-medium text-gray-500">รายการ</th>
+                              <th className="text-right px-4 py-2.5 font-medium text-gray-500">หนา</th>
+                              <th className="text-right px-4 py-2.5 font-medium text-gray-500">ยาว</th>
+                              <th className="text-right px-4 py-2.5 font-medium text-gray-500">จำนวน</th>
+                              <th className="text-right px-4 py-2.5 font-medium text-gray-500">ราคา/หน่วย</th>
+                              <th className="text-right px-4 py-2.5 font-medium text-gray-500">รวม</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {order.items.map((item, i) => (
+                              <tr key={item.id}>
+                                <td className="px-4 py-3 text-gray-400">{i + 1}</td>
+                                <td className="px-4 py-3">
+                                  <div className="font-medium text-gray-800">{item.product?.name || item.description || "-"}</div>
+                                  {item.product?.code && <div className="text-xs text-gray-400">{item.product.code}{item.description && item.description !== item.product.name ? ` — ${item.description}` : ""}</div>}
+                                  {!item.product && item.description && <div className="text-xs text-gray-400">{item.description}</div>}
+                                </td>
+                                <td className="px-4 py-3 text-right text-gray-600">{item.thickness ? Number(item.thickness).toFixed(2) : "-"}</td>
+                                <td className="px-4 py-3 text-right text-gray-600">
+                                  {item.length ? (
+                                    <>{Number(item.length).toFixed(2)} {item.product?.sizes?.[0]?.length_unit || "เมตร"}</>
+                                  ) : "-"}
+                                </td>
+                                <td className="px-4 py-3 text-right text-gray-600">{Number(item.quantity).toLocaleString()} {item.unit}</td>
+                                <td className="px-4 py-3 text-right text-gray-600">{formatCurrency(item.unit_price)}</td>
+                                <td className="px-4 py-3 text-right font-medium text-gray-800">{formatCurrency(item.amount)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      {/* Totals (read-only) */}
+                      <div className="border-t border-gray-200 px-5 py-4">
+                        <div className="flex flex-col items-end gap-1 text-sm">
+                          <div className="flex items-center gap-8"><span className="text-gray-500">ยอดรวม:</span><span className="w-32 text-right">{formatCurrency(order.subtotal)}</span></div>
+                          {Number(order.discount_amount) > 0 && (
+                            <div className="flex items-center gap-8"><span className="text-gray-500">ส่วนลด{order.discount_type === "percent" ? ` (${order.discount_value}%)` : ""}:</span><span className="w-32 text-right text-red-500">-{formatCurrency(order.discount_amount)}</span></div>
+                          )}
+                          {Number(order.vat_amount) > 0 && (
+                            <div className="flex items-center gap-8"><span className="text-gray-500">VAT ({order.vat_rate}%):</span><span className="w-32 text-right">{formatCurrency(order.vat_amount)}</span></div>
+                          )}
+                          <div className="flex items-center gap-8 pt-2 border-t border-gray-200 mt-1"><span className="font-semibold text-gray-800">รวมทั้งสิ้น:</span><span className="w-32 text-right font-bold text-lg text-gray-800">{formatCurrency(order.total)}</span></div>
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               </>
             )}
@@ -989,23 +1166,23 @@ export default function OrderDetailPage() {
             {activeTab === "invoices" && (
               <div className="bg-white rounded-xl border border-gray-200">
                 <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
-                  <h3 className="text-sm font-semibold text-gray-800">ใบกำกับภาษี</h3>
+                  <h3 className="text-sm font-semibold text-gray-800">{invoiceLabel}</h3>
                   {order.status !== "cancelled" && Number(order.remaining_amount) === 0 && !order.invoices?.some(inv => inv.status === "issued") && (
                     <button onClick={handleCreateInvoice} disabled={invoiceCreating} className="flex items-center gap-1 px-3 py-1.5 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50">
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-                      {invoiceCreating ? "กำลังออก..." : "ออกใบกำกับภาษี"}
+                      {invoiceCreating ? "กำลังออก..." : invoiceVerb}
                     </button>
                   )}
                 </div>
 
                 {Number(order.remaining_amount) > 0 && (
                   <div className="px-5 py-3 bg-yellow-50 border-b border-yellow-100">
-                    <p className="text-sm text-yellow-700">⚠️ ต้องชำระเงินครบก่อนจึงจะออกใบกำกับภาษีได้ (คงเหลือ {formatCurrency(order.remaining_amount)} บาท)</p>
+                    <p className="text-sm text-yellow-700">⚠️ ต้องชำระเงินครบก่อนจึงจะ{invoiceVerb}ได้ (คงเหลือ {formatCurrency(order.remaining_amount)} บาท)</p>
                   </div>
                 )}
 
                 {(!order.invoices || order.invoices.length === 0) ? (
-                  <div className="p-8 text-center text-gray-400 text-sm">ยังไม่มีใบกำกับภาษี</div>
+                  <div className="p-8 text-center text-gray-400 text-sm">ยังไม่มี{invoiceLabel}</div>
                 ) : (
                   <div className="divide-y divide-gray-100">
                     {order.invoices.map((inv) => {
