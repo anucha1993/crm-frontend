@@ -16,6 +16,7 @@ interface Quotation {
   vat_rate: string;
   vat_amount: string;
   total: string;
+  account_type?: 'cash' | 'tax' | null;
   creator: { id: number; name: string } | null;
   created_at: string;
 }
@@ -164,7 +165,7 @@ export default function QuotationsPage() {
                           <div className="text-xs text-gray-400">{q.customer?.code}</div>
                         </td>
                         <td className="px-5 py-4">
-                          {Number(q.vat_rate) > 0 ? (
+                          {q.account_type === 'tax' ? (
                             <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700">ออกใบกำกับ</span>
                           ) : (
                             <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-50 text-yellow-700">บิลเงินสด</span>
