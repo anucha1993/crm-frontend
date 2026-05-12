@@ -52,7 +52,6 @@ interface Quotation {
     tax_id: string | null;
     contact_name: string | null;
     phone: string | null;
-    email: string | null;
     address: string | null;
   } | null;
   shipping_address: {
@@ -219,7 +218,6 @@ export default function QuotationPrintPage() {
               {quotation.customer?.address && <p className="text-xs text-gray-600 mt-1">{quotation.customer.address}</p>}
               <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-1 text-xs text-gray-500">
                 {quotation.customer?.phone && <span>โทร: {quotation.customer.phone}</span>}
-                {quotation.customer?.email && <span>{quotation.customer.email}</span>}
               </div>
               {quotation.customer?.tax_id && <p className="text-xs text-gray-500 mt-0.5">เลขผู้เสียภาษี: {quotation.customer.tax_id}</p>}
             </div>

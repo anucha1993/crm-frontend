@@ -9,7 +9,7 @@ import { api, ApiError } from "@/lib/api";
 
 interface CustomerLevel { id: number; name: string; color: string; }
 interface ShippingAddress { id?: number; label: string | null; contact_name: string | null; phone: string | null; address: string; is_default: boolean; }
-interface Customer { id: number; code: string; name: string; type: string; tax_id: string | null; contact_name: string | null; phone: string | null; email: string | null; line_id: string | null; address: string | null; customer_level_id: number | null; level: CustomerLevel | null; addresses: ShippingAddress[]; }
+interface Customer { id: number; code: string; name: string; type: string; tax_id: string | null; contact_name: string | null; phone: string | null; address: string | null; customer_level_id: number | null; level: CustomerLevel | null; addresses: ShippingAddress[]; }
 interface Product { id: number; code: string; name: string; selling_price: string; unit: string; thickness: string | null; length: string | null; category: { id: number; name: string } | null; steel_type: string | null; side_steel: string | null; sizes?: { id: number; thickness: string | null; length: string | null }[]; }
 interface QuotationItem { id?: number; product_id: number | null; description: string; thickness: number | null; length: number | null; quantity: number; unit: string; unit_price: number; amount: number; }
 interface Revision { id: number; revision_number: number; action: string; summary: string; changes: Record<string, { from: string; to: string }> | null; user: { id: number; name: string } | null; created_at: string; }
@@ -56,7 +56,7 @@ export default function QuotationFormPage() {
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState(false);
   const [levels, setLevels] = useState<CustomerLevel[]>([]);
-  const [customerForm, setCustomerForm] = useState({ name: "", type: "general", customer_level_id: "", tax_id: "", contact_name: "", phone: "", email: "", line_id: "", address: "" });
+  const [customerForm, setCustomerForm] = useState({ name: "", type: "general", customer_level_id: "", tax_id: "", contact_name: "", phone: "", address: "" });
   const [shippingAddresses, setShippingAddresses] = useState<ShippingAddress[]>([]);
 
   // Product state
@@ -210,7 +210,7 @@ export default function QuotationFormPage() {
   // Customer modal
   const openCreateCustomer = () => {
     setEditingCustomer(false);
-    setCustomerForm({ name: "", type: "general", customer_level_id: "", tax_id: "", contact_name: "", phone: "", email: "", line_id: "", address: "" });
+    setCustomerForm({ name: "", type: "general", customer_level_id: "", tax_id: "", contact_name: "", phone: "", address: "" });
     setShippingAddresses([]);
     setShowCustomerModal(true);
   };
@@ -221,7 +221,7 @@ export default function QuotationFormPage() {
     setCustomerForm({
       name: selectedCustomer.name, type: selectedCustomer.type, customer_level_id: selectedCustomer.customer_level_id?.toString() || "",
       tax_id: selectedCustomer.tax_id || "", contact_name: selectedCustomer.contact_name || "", phone: selectedCustomer.phone || "",
-      email: selectedCustomer.email || "", line_id: selectedCustomer.line_id || "", address: selectedCustomer.address || "",
+      address: selectedCustomer.address || "",
     });
     setShippingAddresses(selectedCustomer.addresses?.map(a => ({ ...a })) || []);
     setShowCustomerModal(true);
@@ -233,8 +233,7 @@ export default function QuotationFormPage() {
         name: customerForm.name, type: customerForm.type,
         customer_level_id: customerForm.customer_level_id || null,
         tax_id: customerForm.tax_id || null, contact_name: customerForm.contact_name || null,
-        phone: customerForm.phone || null, email: customerForm.email || null,
-        line_id: customerForm.line_id || null, address: customerForm.address || null,
+        phone: customerForm.phone || null, address: customerForm.address || null,
         shipping_addresses: shippingAddresses.filter(a => a.address?.trim()),
       };
       let data: { customer: Customer };
@@ -340,72 +339,70 @@ export default function QuotationFormPage() {
                 <h3 className="text-sm font-semibold text-gray-700">รายการสินค้า / บริการ</h3>
               </div>
 
-              <div className="overflow-x-auto overflow-y-visible">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-gray-200 bg-gray-50">
-                      <th className="text-left px-3 py-2 font-medium text-gray-500 w-10">#</th>
-                      <th className="text-left px-3 py-2 font-medium text-gray-500 min-w-[200px]">สินค้า</th>
-                      <th className="text-right px-3 py-2 font-medium text-gray-500 w-24">ความหนา</th>
-                      <th className="text-right px-3 py-2 font-medium text-gray-500 w-24">ความยาว</th>
-                      <th className="text-right px-3 py-2 font-medium text-gray-500 w-24">จำนวน</th>
-                      <th className="text-left px-3 py-2 font-medium text-gray-500 w-20">หน่วย</th>
-                      <th className="text-right px-3 py-2 font-medium text-gray-500 w-28">ราคา/หน่วย</th>
-                      <th className="text-right px-3 py-2 font-medium text-gray-500 w-28">จำนวนเงิน</th>
-                      <th className="w-10"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {items.map((item, idx) => {
-                      const selectedProduct = products.find(p => p.id === item.product_id);
-                      const isFloorSlab = selectedProduct?.category?.name?.startsWith("แผ่นพื้น") || false;
-                      return (
-                      <tr key={idx} className="border-b border-gray-100">
-                        <td className="px-3 py-2 text-gray-400 text-xs align-top pt-3">{idx + 1}</td>
-                        <td className="px-3 py-2">
-                          <ProductSearchSelect products={products} value={item.product_id} onChange={(val) => selectProduct(idx, val)} />
-                          <input type="text" value={item.description} onChange={(e) => updateItem(idx, "description", e.target.value)} className="w-full mt-1 px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 outline-none" placeholder="รายละเอียด *" />
-                        </td>
-                        <td className="px-3 py-2">
-                          {isFloorSlab ? (
-                            <input type="number" value={item.thickness ?? ""} onChange={(e) => updateItem(idx, "thickness", e.target.value ? Number(e.target.value) : null)} className="w-full px-2 py-1.5 text-sm text-right border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 outline-none" min="0" step="0.01" placeholder="หนา" />
-                          ) : (
-                            <span className="text-gray-300 text-center block">-</span>
-                          )}
-                        </td>
-                        <td className="px-3 py-2">
-                          <input type="number" value={item.length ?? ""} onChange={(e) => updateItem(idx, "length", e.target.value ? Number(e.target.value) : null)} className="w-full px-2 py-1.5 text-sm text-right border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 outline-none" min="0" step="0.01" placeholder="ยาว" />
-                        </td>
-                        <td className="px-3 py-2">
-                          <input type="number" value={item.quantity} onChange={(e) => updateItem(idx, "quantity", Number(e.target.value))} className="w-full px-2 py-1.5 text-sm text-right border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 outline-none" min="0.01" step="0.01" />
-                        </td>
-                        <td className="px-3 py-2">
-                          <input type="text" value={item.unit} onChange={(e) => updateItem(idx, "unit", e.target.value)} className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 outline-none" />
-                        </td>
-                        <td className="px-3 py-2">
-                          <input type="number" value={item.unit_price} onChange={(e) => updateItem(idx, "unit_price", Number(e.target.value))} className="w-full px-2 py-1.5 text-sm text-right border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 outline-none" min="0" step="0.01" />
-                        </td>
-                        <td className="px-3 py-2 text-right font-medium text-gray-700">{formatCurrency(calcItemAmount(item.thickness, item.length, item.quantity, item.unit_price))}</td>
-                        <td className="px-3 py-2">
-                          {items.length > 1 && (
-                            <button onClick={() => removeItem(idx)} className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors">
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    );})}
-                    <tr>
-                      <td colSpan={9} className="px-3 py-2">
-                        <button onClick={addItem} className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-green-700 bg-green-50 hover:bg-green-100 rounded-lg transition-colors">
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-                          เพิ่มรายการ
-                        </button>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 bg-gray-50">
+                    <th className="text-left px-2 py-2 font-medium text-gray-500 w-8">#</th>
+                    <th className="text-left px-2 py-2 font-medium text-gray-500 w-[200px]">สินค้า</th>
+                    <th className="text-right px-2 py-2 font-medium text-gray-500 w-24">ความหนา</th>
+                    <th className="text-right px-2 py-2 font-medium text-gray-500 w-24">ความยาว</th>
+                    <th className="text-right px-2 py-2 font-medium text-gray-500 w-24">จำนวน</th>
+                    <th className="text-left px-2 py-2 font-medium text-gray-500 w-20">หน่วย</th>
+                    <th className="text-right px-2 py-2 font-medium text-gray-500 w-28">ราคา/หน่วย</th>
+                    <th className="text-right px-2 py-2 font-medium text-gray-500 w-28">จำนวนเงิน</th>
+                    <th className="w-8"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((item, idx) => {
+                    const selectedProduct = products.find(p => p.id === item.product_id);
+                    const isFloorSlab = selectedProduct?.category?.name?.startsWith("แผ่นพื้น") || false;
+                    return (
+                    <tr key={idx} className="border-b border-gray-100">
+                      <td className="px-2 py-2 text-gray-400 text-xs align-top pt-3">{idx + 1}</td>
+                      <td className="px-2 py-2">
+                        <ProductSearchSelect products={products} value={item.product_id} onChange={(val) => selectProduct(idx, val)} />
+                        <input type="text" value={item.description} onChange={(e) => updateItem(idx, "description", e.target.value)} className="w-full mt-1 px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 outline-none" placeholder="รายละเอียด *" />
+                      </td>
+                      <td className="px-1 py-2">
+                        {isFloorSlab ? (
+                          <input type="number" value={item.thickness ?? ""} onChange={(e) => updateItem(idx, "thickness", e.target.value ? Number(e.target.value) : null)} className="w-full px-1.5 py-1.5 text-sm text-right border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 outline-none" min="0" step="0.01" placeholder="หนา" />
+                        ) : (
+                          <span className="text-gray-300 text-center block">-</span>
+                        )}
+                      </td>
+                      <td className="px-1 py-2">
+                        <input type="number" value={item.length ?? ""} onChange={(e) => updateItem(idx, "length", e.target.value ? Number(e.target.value) : null)} className="w-full px-1.5 py-1.5 text-sm text-right border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 outline-none" min="0" step="0.01" placeholder="ยาว" />
+                      </td>
+                      <td className="px-1 py-2">
+                        <input type="number" value={item.quantity} onChange={(e) => updateItem(idx, "quantity", Number(e.target.value))} className="w-full px-1.5 py-1.5 text-sm text-right border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 outline-none" min="0.01" step="0.01" />
+                      </td>
+                      <td className="px-1 py-2">
+                        <input type="text" value={item.unit} onChange={(e) => updateItem(idx, "unit", e.target.value)} className="w-full px-1.5 py-1.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 outline-none" />
+                      </td>
+                      <td className="px-1 py-2">
+                        <input type="number" value={item.unit_price} onChange={(e) => updateItem(idx, "unit_price", Number(e.target.value))} className="w-full px-1.5 py-1.5 text-sm text-right border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 outline-none" min="0" step="0.01" />
+                      </td>
+                      <td className="px-2 py-2 text-right font-medium text-gray-700">{formatCurrency(calcItemAmount(item.thickness, item.length, item.quantity, item.unit_price))}</td>
+                      <td className="px-1 py-2">
+                        {items.length > 1 && (
+                          <button onClick={() => removeItem(idx)} className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                          </button>
+                        )}
                       </td>
                     </tr>
-                  </tbody>
-                </table>
-              </div>
+                  );})}
+                  <tr>
+                    <td colSpan={9} className="px-2 py-2">
+                      <button onClick={addItem} className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-green-700 bg-green-50 hover:bg-green-100 rounded-lg transition-colors">
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                        เพิ่มรายการ
+                      </button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
 
               {/* Totals */}
               <div className="mt-6 flex justify-end">
@@ -539,8 +536,6 @@ export default function QuotationFormPage() {
                     <div><span className="text-xs text-gray-400">เบอร์โทร</span><p className="text-sm">{selectedCustomer.phone || "-"}</p></div>
                     <div><span className="text-xs text-gray-400">เลขผู้เสียภาษี</span><p className="text-sm">{selectedCustomer.tax_id || "-"}</p></div>
                     <div><span className="text-xs text-gray-400">ผู้ติดต่อ</span><p className="text-sm">{selectedCustomer.contact_name || "-"}</p></div>
-                    <div><span className="text-xs text-gray-400">Email</span><p className="text-sm">{selectedCustomer.email || "-"}</p></div>
-                    <div><span className="text-xs text-gray-400">Line ID</span><p className="text-sm">{selectedCustomer.line_id || "-"}</p></div>
                   </div>
                   {selectedCustomer.address && (
                     <div><span className="text-xs text-gray-400">ที่อยู่</span><p className="text-sm">{selectedCustomer.address}</p></div>
@@ -686,8 +681,6 @@ export default function QuotationFormPage() {
                 <div><label className={labelClass}>เลขผู้เสียภาษี</label><input type="text" value={customerForm.tax_id} onChange={(e) => setCustomerForm(f => ({ ...f, tax_id: e.target.value }))} className={inputClass} maxLength={20} /></div>
                 <div><label className={labelClass}>ชื่อผู้ติดต่อ</label><input type="text" value={customerForm.contact_name} onChange={(e) => setCustomerForm(f => ({ ...f, contact_name: e.target.value }))} className={inputClass} /></div>
                 <div><label className={labelClass}>เบอร์โทร</label><input type="tel" value={customerForm.phone} onChange={(e) => setCustomerForm(f => ({ ...f, phone: e.target.value }))} className={inputClass} /></div>
-                <div><label className={labelClass}>Email</label><input type="email" value={customerForm.email} onChange={(e) => setCustomerForm(f => ({ ...f, email: e.target.value }))} className={inputClass} /></div>
-                <div className="col-span-2"><label className={labelClass}>Line ID</label><input type="text" value={customerForm.line_id} onChange={(e) => setCustomerForm(f => ({ ...f, line_id: e.target.value }))} className={inputClass} /></div>
                 <div className="col-span-2"><label className={labelClass}>ที่อยู่</label><textarea value={customerForm.address} onChange={(e) => setCustomerForm(f => ({ ...f, address: e.target.value }))} className={inputClass} rows={2} /></div>
               </div>
             </div>

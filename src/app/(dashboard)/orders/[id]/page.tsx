@@ -841,76 +841,74 @@ export default function OrderDetailPage() {
                   </div>
                   {editingItems ? (
                     <div className="p-5">
-                      <div className="overflow-x-auto overflow-y-visible">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="border-b border-gray-200 bg-gray-50">
-                              <th className="text-left px-3 py-2 font-medium text-gray-500 w-10">#</th>
-                              <th className="text-left px-3 py-2 font-medium text-gray-500 min-w-[200px]">สินค้า</th>
-                              <th className="text-right px-3 py-2 font-medium text-gray-500 w-24">ความหนา</th>
-                              <th className="text-right px-3 py-2 font-medium text-gray-500 w-24">ความยาว</th>
-                              <th className="text-right px-3 py-2 font-medium text-gray-500 w-24">จำนวน</th>
-                              <th className="text-left px-3 py-2 font-medium text-gray-500 w-20">หน่วย</th>
-                              <th className="text-right px-3 py-2 font-medium text-gray-500 w-28">ราคา/หน่วย</th>
-                              <th className="text-right px-3 py-2 font-medium text-gray-500 w-28">จำนวนเงิน</th>
-                              <th className="w-10"></th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {editItems.map((item, idx) => {
-                              const selectedProduct = products.find(p => p.id === item.product_id);
-                              const isFloorSlab = selectedProduct?.category?.name?.startsWith("แผ่นพื้น") || false;
-                              const thicknessNum = item.thickness != null && item.thickness !== "" ? Number(item.thickness) : null;
-                              const lengthNum = item.length != null && item.length !== "" ? Number(item.length) : null;
-                              const computedAmount = calcItemAmount(thicknessNum, lengthNum, Number(item.quantity) || 0, Number(item.unit_price) || 0);
-                              return (
-                                <tr key={idx} className="border-b border-gray-100">
-                                  <td className="px-3 py-2 text-gray-400 text-xs align-top pt-3">{idx + 1}</td>
-                                  <td className="px-3 py-2">
-                                    <ProductSearchSelect products={products} value={item.product_id} onChange={(val) => selectEditProduct(idx, val)} />
-                                    <input type="text" value={item.description} onChange={(e) => updateEditItem(idx, "description", e.target.value)} className="w-full mt-1 px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 outline-none" placeholder="รายละเอียด *" />
-                                  </td>
-                                  <td className="px-3 py-2">
-                                    {isFloorSlab ? (
-                                      <input type="number" value={item.thickness ?? ""} onChange={(e) => updateEditItem(idx, "thickness", e.target.value || null)} className="w-full px-2 py-1.5 text-sm text-right border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 outline-none" min="0" step="0.01" placeholder="หนา" />
-                                    ) : (
-                                      <span className="text-gray-300 text-center block">-</span>
-                                    )}
-                                  </td>
-                                  <td className="px-3 py-2">
-                                    <input type="number" value={item.length ?? ""} onChange={(e) => updateEditItem(idx, "length", e.target.value || null)} className="w-full px-2 py-1.5 text-sm text-right border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 outline-none" min="0" step="0.01" placeholder="ยาว" />
-                                  </td>
-                                  <td className="px-3 py-2">
-                                    <input type="number" value={item.quantity} onChange={(e) => updateEditItem(idx, "quantity", e.target.value)} className="w-full px-2 py-1.5 text-sm text-right border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 outline-none" min="0.01" step="0.01" />
-                                  </td>
-                                  <td className="px-3 py-2">
-                                    <input type="text" value={item.unit} onChange={(e) => updateEditItem(idx, "unit", e.target.value)} className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 outline-none" />
-                                  </td>
-                                  <td className="px-3 py-2">
-                                    <input type="number" value={item.unit_price} onChange={(e) => updateEditItem(idx, "unit_price", e.target.value)} className="w-full px-2 py-1.5 text-sm text-right border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 outline-none" min="0" step="0.01" />
-                                  </td>
-                                  <td className="px-3 py-2 text-right font-medium text-gray-700">{formatCurrency(computedAmount)}</td>
-                                  <td className="px-3 py-2">
-                                    {editItems.length > 1 && (
-                                      <button onClick={() => removeEditItem(idx)} className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors">
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                      </button>
-                                    )}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                            <tr>
-                              <td colSpan={9} className="px-3 py-2">
-                                <button onClick={addEditItem} className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-green-700 bg-green-50 hover:bg-green-100 rounded-lg transition-colors">
-                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-                                  เพิ่มรายการ
-                                </button>
-                              </td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-gray-200 bg-gray-50">
+                            <th className="text-left px-2 py-2 font-medium text-gray-500 w-8">#</th>
+                            <th className="text-left px-2 py-2 font-medium text-gray-500 w-[200px]">สินค้า</th>
+                            <th className="text-right px-2 py-2 font-medium text-gray-500 w-24">ความหนา</th>
+                            <th className="text-right px-2 py-2 font-medium text-gray-500 w-24">ความยาว</th>
+                            <th className="text-right px-2 py-2 font-medium text-gray-500 w-24">จำนวน</th>
+                            <th className="text-left px-2 py-2 font-medium text-gray-500 w-20">หน่วย</th>
+                            <th className="text-right px-2 py-2 font-medium text-gray-500 w-28">ราคา/หน่วย</th>
+                            <th className="text-right px-2 py-2 font-medium text-gray-500 w-28">จำนวนเงิน</th>
+                            <th className="w-8"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {editItems.map((item, idx) => {
+                            const selectedProduct = products.find(p => p.id === item.product_id);
+                            const isFloorSlab = selectedProduct?.category?.name?.startsWith("แผ่นพื้น") || false;
+                            const thicknessNum = item.thickness != null && item.thickness !== "" ? Number(item.thickness) : null;
+                            const lengthNum = item.length != null && item.length !== "" ? Number(item.length) : null;
+                            const computedAmount = calcItemAmount(thicknessNum, lengthNum, Number(item.quantity) || 0, Number(item.unit_price) || 0);
+                            return (
+                              <tr key={idx} className="border-b border-gray-100">
+                                <td className="px-2 py-2 text-gray-400 text-xs align-top pt-3">{idx + 1}</td>
+                                <td className="px-2 py-2">
+                                  <ProductSearchSelect products={products} value={item.product_id} onChange={(val) => selectEditProduct(idx, val)} />
+                                  <input type="text" value={item.description} onChange={(e) => updateEditItem(idx, "description", e.target.value)} className="w-full mt-1 px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 outline-none" placeholder="รายละเอียด *" />
+                                </td>
+                                <td className="px-1 py-2">
+                                  {isFloorSlab ? (
+                                    <input type="number" value={item.thickness ?? ""} onChange={(e) => updateEditItem(idx, "thickness", e.target.value || null)} className="w-full px-1.5 py-1.5 text-sm text-right border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 outline-none" min="0" step="0.01" placeholder="หนา" />
+                                  ) : (
+                                    <span className="text-gray-300 text-center block">-</span>
+                                  )}
+                                </td>
+                                <td className="px-1 py-2">
+                                  <input type="number" value={item.length ?? ""} onChange={(e) => updateEditItem(idx, "length", e.target.value || null)} className="w-full px-1.5 py-1.5 text-sm text-right border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 outline-none" min="0" step="0.01" placeholder="ยาว" />
+                                </td>
+                                <td className="px-1 py-2">
+                                  <input type="number" value={item.quantity} onChange={(e) => updateEditItem(idx, "quantity", e.target.value)} className="w-full px-1.5 py-1.5 text-sm text-right border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 outline-none" min="0.01" step="0.01" />
+                                </td>
+                                <td className="px-1 py-2">
+                                  <input type="text" value={item.unit} onChange={(e) => updateEditItem(idx, "unit", e.target.value)} className="w-full px-1.5 py-1.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 outline-none" />
+                                </td>
+                                <td className="px-1 py-2">
+                                  <input type="number" value={item.unit_price} onChange={(e) => updateEditItem(idx, "unit_price", e.target.value)} className="w-full px-1.5 py-1.5 text-sm text-right border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 outline-none" min="0" step="0.01" />
+                                </td>
+                                <td className="px-2 py-2 text-right font-medium text-gray-700">{formatCurrency(computedAmount)}</td>
+                                <td className="px-1 py-2">
+                                  {editItems.length > 1 && (
+                                    <button onClick={() => removeEditItem(idx)} className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors">
+                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                          <tr>
+                            <td colSpan={9} className="px-2 py-2">
+                              <button onClick={addEditItem} className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-green-700 bg-green-50 hover:bg-green-100 rounded-lg transition-colors">
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                                เพิ่มรายการ
+                              </button>
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
                       {/* Totals editor (matches quotation) */}
                       <div className="mt-6 flex justify-end">
                         <div className="w-full max-w-sm space-y-2">

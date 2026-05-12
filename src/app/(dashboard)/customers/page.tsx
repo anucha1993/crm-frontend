@@ -27,8 +27,6 @@ interface Customer {
   tax_id: string | null;
   contact_name: string | null;
   phone: string | null;
-  email: string | null;
-  line_id: string | null;
   address: string | null;
   last_activity_at: string | null;
   created_by: number | null;
@@ -60,8 +58,6 @@ const emptyForm = {
   tax_id: "",
   contact_name: "",
   phone: "",
-  email: "",
-  line_id: "",
   address: "",
 };
 
@@ -142,8 +138,6 @@ export default function CustomersPage() {
       tax_id: c.tax_id || "",
       contact_name: c.contact_name || "",
       phone: c.phone || "",
-      email: c.email || "",
-      line_id: c.line_id || "",
       address: c.address || "",
     });
     setShippingAddresses(c.addresses?.map(a => ({ ...a })) || []);
@@ -162,8 +156,6 @@ export default function CustomersPage() {
         tax_id: form.tax_id || null,
         contact_name: form.contact_name || null,
         phone: form.phone || null,
-        email: form.email || null,
-        line_id: form.line_id || null,
         address: form.address || null,
         shipping_addresses: shippingAddresses.filter(a => a.address.trim()),
       };
@@ -310,7 +302,6 @@ export default function CustomersPage() {
                         <td className="px-5 py-4">
                           <div className="font-medium text-gray-800">{c.name}</div>
                           {c.tax_id && <div className="text-xs text-gray-400 mt-0.5">เลขผู้เสียภาษี: {c.tax_id}</div>}
-                          {c.email && <div className="text-xs text-gray-400">{c.email}</div>}
                         </td>
                         <td className="px-5 py-4">
                           <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${c.type === "regular" ? "bg-blue-50 text-blue-700" : "bg-gray-100 text-gray-600"}`}>
@@ -329,7 +320,6 @@ export default function CustomersPage() {
                         </td>
                         <td className="px-5 py-4 text-gray-600">
                           {c.contact_name || "-"}
-                          {c.line_id && <div className="text-xs text-green-600 mt-0.5">LINE: {c.line_id}</div>}
                         </td>
                         <td className="px-5 py-4 text-gray-600">{c.phone || "-"}</td>
                         <td className="px-5 py-4">
@@ -411,7 +401,7 @@ export default function CustomersPage() {
                   <input type="text" value={form.name} onChange={(e) => updateForm("name", e.target.value)} className={inputClass} placeholder="ชื่อบริษัท / ร้านค้า / ลูกค้า" />
                 </div>
                 <div>
-                  <label className={labelClass}>ประเภทลูกค้า *</label>
+                  <label className={labelClass}>ประเภทลูกค้า</label>
                   <select value={form.type} onChange={(e) => updateForm("type", e.target.value)} className={inputClass}>
                     {CUSTOMER_TYPES.map((t) => (
                       <option key={t.value} value={t.value}>{t.label}</option>
@@ -438,14 +428,6 @@ export default function CustomersPage() {
                 <div>
                   <label className={labelClass}>เบอร์โทร</label>
                   <input type="tel" value={form.phone} onChange={(e) => updateForm("phone", e.target.value)} className={inputClass} placeholder="0XX-XXX-XXXX" />
-                </div>
-                <div>
-                  <label className={labelClass}>Email</label>
-                  <input type="email" value={form.email} onChange={(e) => updateForm("email", e.target.value)} className={inputClass} placeholder="email@example.com" />
-                </div>
-                <div className="col-span-2">
-                  <label className={labelClass}>Line ID</label>
-                  <input type="text" value={form.line_id} onChange={(e) => updateForm("line_id", e.target.value)} className={inputClass} placeholder="Line ID" />
                 </div>
                 <div className="col-span-2">
                   <label className={labelClass}>ที่อยู่ลูกค้า</label>
@@ -486,7 +468,7 @@ export default function CustomersPage() {
                         <input type="text" value={addr.contact_name || ""} onChange={(e) => updateShippingAddress(idx, "contact_name", e.target.value)} className={inputClass} placeholder="ชื่อผู้รับ" />
                         <input type="tel" value={addr.phone || ""} onChange={(e) => updateShippingAddress(idx, "phone", e.target.value)} className={inputClass} placeholder="เบอร์โทรผู้รับ" />
                       </div>
-                      <textarea value={addr.address} onChange={(e) => updateShippingAddress(idx, "address", e.target.value)} className={inputClass} rows={2} placeholder="ที่อยู่จัดส่ง *" />
+                      <textarea value={addr.address} onChange={(e) => updateShippingAddress(idx, "address", e.target.value)} className={inputClass} rows={2} placeholder="ที่อยู่จัดส่ง" />
                     </div>
                   ))}
                 </div>

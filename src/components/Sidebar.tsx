@@ -116,6 +116,7 @@ const navItems: NavItem[] = [
       </svg>
     ),
     children: [
+      { href: "/invoices/pending", label: "รอออก / ตรวจสอบ" },
       { href: "/invoices", label: "ทั้งหมด" },
       { href: "/invoices?status=issued", label: "ออกแล้ว" },
       { href: "/invoices?status=cancelled", label: "ยกเลิก" },
