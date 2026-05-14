@@ -37,6 +37,7 @@ export default function QuotationFormPage() {
   const [customerAddressId, setCustomerAddressId] = useState<number | null>(null);
   const [status, setStatus] = useState("draft");
   const [notes, setNotes] = useState("");
+  const [validUntil, setValidUntil] = useState<string>("");
   const [discountType, setDiscountType] = useState<"percent" | "amount">("amount");
   const [discountValue, setDiscountValue] = useState(0);
   const [vatRate, setVatRate] = useState(7);
@@ -103,7 +104,7 @@ export default function QuotationFormPage() {
   const fetchQuotation = useCallback(async () => {
     if (!token || !isEdit) return;
     try {
-      const data = await api.get<{ quotation: { id: number; quotation_number: string; customer_id: number; customer_address_id: number | null; status: string; notes: string | null; discount_type: string; discount_value: string; vat_rate: string; customer: Customer; creator?: { id: number; name: string } | null; items: { id: number; product_id: number | null; thickness: string | null; length: string | null; description: string; quantity: string; unit: string; unit_price: string; amount: string }[] }; linked_order?: { id: number; order_number: string; status: string } | null }>(`/quotations/${quotationId}`, token);
+      const data = await api.get<{ quotation: { id: number; quotation_number: string; customer_id: number; customer_address_id: number | null; status: string; notes: string | null; valid_until: string | null; discount_type: string; discount_value: string; vat_rate: string; customer: Customer; creator?: { id: number; name: string } | null; items: { id: number; product_id: number | null; thickness: string | null; length: string | null; description: string; quantity: string; unit: string; unit_price: string; amount: string }[] }; linked_order?: { id: number; order_number: string; status: string } | null }>(`/quotations/${quotationId}`, token);
       const q = data.quotation;
       setQuotationNumber(q.quotation_number);
       setRevisionNumber((q as unknown as { revision_number: number }).revision_number || 0);
@@ -113,6 +114,7 @@ export default function QuotationFormPage() {
       setCustomerAddressId(q.customer_address_id);
       setStatus(q.status);
       setNotes(q.notes || "");
+      setValidUntil(q.valid_until ? q.valid_until.slice(0, 10) : "");
       setDiscountType(q.discount_type as "percent" | "amount");
       setDiscountValue(Number(q.discount_value));
       setVatRate(Number(q.vat_rate));
@@ -274,6 +276,7 @@ export default function QuotationFormPage() {
         customer_address_id: customerAddressId,
         status,
         notes: notes || null,
+        valid_until: validUntil || null,
         discount_type: discountType,
         discount_value: discountValue,
         vat_rate: isCash ? 0 : (includeVat ? vatRate : 0),
@@ -378,10 +381,37 @@ export default function QuotationFormPage() {
                         <input type="number" value={item.quantity} onChange={(e) => updateItem(idx, "quantity", Number(e.target.value))} className="w-full px-1.5 py-1.5 text-sm text-right border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 outline-none" min="0.01" step="0.01" />
                       </td>
                       <td className="px-1 py-2">
-                        <input type="text" value={item.unit} onChange={(e) => updateItem(idx, "unit", e.target.value)} className="w-full px-1.5 py-1.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 outline-none" />
+                        {(() => {
+                          const selectedProduct = products.find(p => p.id === item.product_id);
+                          const autoUnit = selectedProduct?.unit === "แผ่น" ? "ตรม." : item.unit;
+                          return (
+                            <input
+                              type="text"
+                              value={autoUnit}
+                              onChange={(e) => updateItem(idx, "unit", e.target.value)}
+                              className="w-full px-1.5 py-1.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 outline-none"
+                              readOnly={selectedProduct?.unit === "แผ่น"}
+                            />
+                          );
+                        })()}
                       </td>
                       <td className="px-1 py-2">
-                        <input type="number" value={item.unit_price} onChange={(e) => updateItem(idx, "unit_price", Number(e.target.value))} className="w-full px-1.5 py-1.5 text-sm text-right border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 outline-none" min="0" step="0.01" />
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            value={item.unit_price}
+                            onChange={(e) => updateItem(idx, "unit_price", Number(e.target.value))}
+                            className="w-full px-1.5 py-1.5 text-sm text-right border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 outline-none"
+                            min="0"
+                            step="0.01"
+                          />
+                          <span className="text-xs text-gray-400 font-normal">/
+                            {(() => {
+                              const selectedProduct = products.find(p => p.id === item.product_id);
+                              return selectedProduct?.unit === "แผ่น" ? "ตรม." : item.unit;
+                            })()}
+                          </span>
+                        </div>
                       </td>
                       <td className="px-2 py-2 text-right font-medium text-gray-700">{formatCurrency(calcItemAmount(item.thickness, item.length, item.quantity, item.unit_price))}</td>
                       <td className="px-1 py-2">
@@ -464,6 +494,13 @@ export default function QuotationFormPage() {
                 <div>
                   <label className={labelClass}>เลขที่ใบเสนอราคา</label>
                   <input type="text" value={quotationNumber} readOnly className={`${inputClass} bg-gray-50`} />
+                </div>
+                <div>
+                  <label className={labelClass}>ยืนราคาถึงวันที่</label>
+                  <input type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} className={inputClass} />
+                  {validUntil && new Date(validUntil) < new Date(new Date().toDateString()) && (
+                    <p className="text-xs text-red-600 mt-1">เลยกำหนดยืนราคาแล้ว</p>
+                  )}
                 </div>
                 <div>
                   <label className={labelClass}>สถานะ</label>

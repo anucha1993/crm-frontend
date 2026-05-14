@@ -17,6 +17,7 @@ interface Quotation {
   vat_amount: string;
   total: string;
   account_type?: 'cash' | 'tax' | null;
+  valid_until?: string | null;
   creator: { id: number; name: string } | null;
   created_at: string;
 }
@@ -172,7 +173,15 @@ export default function QuotationsPage() {
                           )}
                         </td>
                         <td className="px-5 py-4">
-                          <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${st.color}`}>{st.label}</span>
+                          {(() => {
+                            const expired = q.valid_until && new Date(q.valid_until) < new Date(new Date().toDateString()) && q.status !== 'cancelled' && q.status !== 'rejected';
+                            return (
+                              <div className="flex items-center gap-1">
+                                <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${st.color}`}>{st.label}</span>
+                                {expired && <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-700">เลยกำหนดยืนราคา</span>}
+                              </div>
+                            );
+                          })()}
                         </td>
                         <td className="px-5 py-4 text-right font-medium text-gray-800">{formatCurrency(q.total)}</td>
                         <td className="px-5 py-4 text-gray-500 text-xs">{formatDate(q.created_at)}</td>

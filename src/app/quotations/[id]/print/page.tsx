@@ -29,7 +29,7 @@ interface QuotationItem {
   unit: string;
   unit_price: string;
   amount: string;
-  product: { id: number; name: string; code: string; steel_type: string | null; side_steel: string | null } | null;
+  product: { id: number; name: string; code: string; steel_type: string | null; side_steel: string | null; unit?: string | null } | null;
 }
 
 interface Quotation {
@@ -201,7 +201,7 @@ export default function QuotationPrintPage() {
             </div>
             <div className="text-right">
               <h1 className="text-2xl font-bold text-gray-900">
-                {isVat ? "ใบเสนอราคา / ใบกำกับภาษี" : "ใบเสนอราคา / บิลเงินสด"}
+                {"ใบเสนอราคา / Quotation"}
               </h1>
               <p className="text-sm text-gray-600 mt-1">เลขที่: <span className="font-mono font-semibold">{quotation.quotation_number}</span></p>
               <p className="text-sm text-gray-600">วันที่: {formatDate(quotation.created_at)}</p>
@@ -250,11 +250,21 @@ export default function QuotationPrintPage() {
               </tr>
             </thead>
             <tbody>
-              {quotation.items.map((item, i) => (
+              {quotation.items.map((item, i) => {
+                const rawUnit = (item.unit || "").trim();
+                const productUnit = (item.product?.unit || "").trim();
+                const isSheet = rawUnit === "แผ่น" || rawUnit === "ตรม." || rawUnit === "ตรม" || productUnit === "แผ่น";
+                const displayUnit = isSheet ? "ตรม." : item.unit;
+                const displayDescription = isSheet
+                  ? item.description
+                      .replace(/\/\s*เมตร/g, "/ตรม.")
+                      .replace(/\bเมตร\b/g, "ตรม.")
+                  : item.description;
+                return (
                 <tr key={item.id} className={i % 2 === 0 ? "bg-white" : "bg-gray-50"}>
                   <td className="py-2 px-3 text-center text-gray-500 border-b border-gray-200">{i + 1}</td>
                   <td className="py-2 px-3 border-b border-gray-200">
-                    <span className="text-gray-800">{item.description}</span>
+                    <span className="text-gray-800">{displayDescription}</span>
                   </td>
                   <td className="py-2 px-3 text-right border-b border-gray-200 text-gray-600">
                     {item.thickness ? Number(item.thickness).toFixed(2) : "-"}
@@ -263,11 +273,15 @@ export default function QuotationPrintPage() {
                     {item.length ? Number(item.length).toFixed(2) : "-"}
                   </td>
                   <td className="py-2 px-3 text-right border-b border-gray-200 text-gray-600">{Number(item.quantity).toLocaleString()}</td>
-                  <td className="py-2 px-3 text-center border-b border-gray-200 text-gray-600">{item.unit}</td>
-                  <td className="py-2 px-3 text-right border-b border-gray-200 text-gray-600">{formatCurrency(item.unit_price)}</td>
+                  <td className="py-2 px-3 text-center border-b border-gray-200 text-gray-600">{displayUnit}</td>
+                  <td className="py-2 px-3 text-right border-b border-gray-200 text-gray-600">
+                    {formatCurrency(item.unit_price)}
+                    <span className="text-xs text-gray-400 font-normal">/{displayUnit}</span>
+                  </td>
                   <td className="py-2 px-3 text-right border-b border-gray-200 font-medium text-gray-800">{formatCurrency(item.amount)}</td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
 
@@ -297,6 +311,7 @@ export default function QuotationPrintPage() {
               <div className="text-right text-xs text-gray-500 mt-1">
                 ({numberToThaiText(Number(quotation.total))})
               </div>
+              
             </div>
           </div>
 
