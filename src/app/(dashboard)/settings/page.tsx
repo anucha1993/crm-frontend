@@ -38,8 +38,10 @@ export default function SettingsPage() {
     if (!token) return;
     try {
       const data = await api.get<{ settings: CompanySettings }>("/company-settings", token);
-      setSettings(data.settings);
-    } catch { /* silent */ } finally { setLoading(false); }
+      setSettings(data.settings || {});
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "โหลดข้อมูลไม่สำเร็จ");
+    } finally { setLoading(false); }
   }, [token]);
 
   useEffect(() => { fetchSettings(); }, [fetchSettings]);
