@@ -56,6 +56,8 @@ export default function QuotationFormPage() {
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState(false);
+  const [showShippingModal, setShowShippingModal] = useState(false);
+  const [savingShipping, setSavingShipping] = useState(false);
   const [levels, setLevels] = useState<CustomerLevel[]>([]);
   const [customerForm, setCustomerForm] = useState({ name: "", type: "general", customer_level_id: "", tax_id: "", contact_name: "", phone: "", address: "" });
   const [shippingAddresses, setShippingAddresses] = useState<ShippingAddress[]>([]);
@@ -262,6 +264,44 @@ export default function QuotationFormPage() {
       if (i !== idx) return field === "is_default" && value === true ? { ...a, is_default: false } : a;
       return { ...a, [field]: value };
     }));
+  };
+
+  const openShippingManager = () => {
+    if (!selectedCustomer) return;
+    setShippingAddresses(selectedCustomer.addresses?.map(a => ({ ...a })) || []);
+    setShowShippingModal(true);
+  };
+
+  const handleSaveShippingAddresses = async () => {
+    if (!selectedCustomer) return;
+    setSavingShipping(true);
+    try {
+      const payload = {
+        shipping_addresses: shippingAddresses
+          .filter(a => a.address?.trim())
+          .map(a => ({
+            ...(a.id ? { id: a.id } : {}),
+            label: a.label || null,
+            contact_name: a.contact_name || null,
+            phone: a.phone || null,
+            address: a.address,
+            is_default: !!a.is_default,
+          })),
+      };
+      const data = await api.put<{ customer: Customer }>(`/customers/${selectedCustomer.id}`, payload, token!);
+      setSelectedCustomer(data.customer);
+      // Keep current selection if still exists; else use default; else null
+      const stillExists = data.customer.addresses?.some(a => a.id === customerAddressId);
+      if (!stillExists) {
+        const defaultAddr = data.customer.addresses?.find(a => a.is_default);
+        setCustomerAddressId(defaultAddr?.id || null);
+      }
+      setShowShippingModal(false);
+    } catch (err) {
+      alert(err instanceof ApiError ? (err.errors ? Object.values(err.errors).flat().join(", ") : err.message) : "เกิดข้อผิดพลาด");
+    } finally {
+      setSavingShipping(false);
+    }
   };
 
   // Save quotation
@@ -581,15 +621,29 @@ export default function QuotationFormPage() {
               )}
 
               {/* Shipping address select */}
-              {selectedCustomer && selectedCustomer.addresses?.length > 0 && (
+              {selectedCustomer && (
                 <div>
-                  <label className={labelClass}>ที่อยู่จัดส่ง</label>
-                  <select value={customerAddressId || ""} onChange={(e) => setCustomerAddressId(e.target.value ? Number(e.target.value) : null)} className={inputClass}>
-                    <option value="">-- ไม่ระบุ --</option>
-                    {selectedCustomer.addresses.map(a => (
-                      <option key={a.id} value={a.id}>{a.label || "ที่อยู่จัดส่ง"} — {a.address?.substring(0, 40)}{(a.address?.length || 0) > 40 ? "..." : ""} {a.is_default ? "(ค่าเริ่มต้น)" : ""}</option>
-                    ))}
-                  </select>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className={labelClass} style={{ marginBottom: 0 }}>ที่อยู่จัดส่ง</label>
+                    <button
+                      type="button"
+                      onClick={openShippingManager}
+                      className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-green-700 bg-green-50 hover:bg-green-100 rounded-lg transition-colors"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                      เพิ่ม/แก้ไขที่อยู่จัดส่ง
+                    </button>
+                  </div>
+                  {selectedCustomer.addresses?.length > 0 ? (
+                    <select value={customerAddressId || ""} onChange={(e) => setCustomerAddressId(e.target.value ? Number(e.target.value) : null)} className={inputClass}>
+                      <option value="">-- ไม่ระบุ --</option>
+                      {selectedCustomer.addresses.map(a => (
+                        <option key={a.id} value={a.id}>{a.label || "ที่อยู่จัดส่ง"} — {a.address?.substring(0, 40)}{(a.address?.length || 0) > 40 ? "..." : ""} {a.is_default ? "(ค่าเริ่มต้น)" : ""}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <p className="text-xs text-gray-400 py-2">ยังไม่มีที่อยู่จัดส่ง — กดปุ่ม &quot;เพิ่ม/แก้ไขที่อยู่จัดส่ง&quot;</p>
+                  )}
                   {customerAddressId && (() => {
                     const addr = selectedCustomer.addresses.find(a => a.id === customerAddressId);
                     if (!addr) return null;
@@ -759,6 +813,51 @@ export default function QuotationFormPage() {
             <div className="flex justify-end gap-3 mt-6 pt-4 border-t">
               <button onClick={() => setShowCustomerModal(false)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">ยกเลิก</button>
               <button onClick={handleSaveCustomer} className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">บันทึกลูกค้า</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Shipping Address Manager Modal (no customer fields) */}
+      {showShippingModal && selectedCustomer && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 overflow-y-auto py-8">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl p-6 my-auto">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-lg font-bold text-gray-800">จัดการที่อยู่จัดส่ง</h3>
+                <p className="text-xs text-gray-500 mt-0.5">ลูกค้า: {selectedCustomer.name}</p>
+              </div>
+              <button type="button" onClick={addShipping} className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-green-700 bg-green-50 hover:bg-green-100 rounded-lg transition-colors">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                เพิ่มที่อยู่
+              </button>
+            </div>
+            {shippingAddresses.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-6">ยังไม่มีที่อยู่จัดส่ง — กด &quot;เพิ่มที่อยู่&quot; เพื่อเริ่ม</p>
+            ) : (
+              <div className="space-y-3 max-h-[60vh] overflow-y-auto">
+                {shippingAddresses.map((addr, idx) => (
+                  <div key={idx} className="p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium text-gray-500">ที่อยู่จัดส่ง #{idx + 1}</span>
+                      <div className="flex items-center gap-2">
+                        <label className="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" checked={addr.is_default} onChange={(e) => updateShipping(idx, "is_default", e.target.checked)} className="w-3.5 h-3.5 rounded border-gray-300 text-green-600 focus:ring-green-500" /><span className="text-xs text-gray-500">ค่าเริ่มต้น</span></label>
+                        <button type="button" onClick={() => removeShipping(idx)} className="p-1 text-gray-400 hover:text-red-500 rounded"><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <input type="text" value={addr.label || ""} onChange={(e) => updateShipping(idx, "label", e.target.value)} className={inputClass} placeholder="ชื่อที่อยู่" />
+                      <input type="text" value={addr.contact_name || ""} onChange={(e) => updateShipping(idx, "contact_name", e.target.value)} className={inputClass} placeholder="ชื่อผู้รับ" />
+                      <input type="tel" value={addr.phone || ""} onChange={(e) => updateShipping(idx, "phone", e.target.value)} className={inputClass} placeholder="เบอร์ผู้รับ" />
+                    </div>
+                    <textarea value={addr.address || ""} onChange={(e) => updateShipping(idx, "address", e.target.value)} className={inputClass} rows={2} placeholder="ที่อยู่จัดส่ง *" />
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex justify-end gap-3 mt-6 pt-4 border-t">
+              <button onClick={() => setShowShippingModal(false)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">ยกเลิก</button>
+              <button onClick={handleSaveShippingAddresses} disabled={savingShipping} className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-300 transition-colors">{savingShipping ? "กำลังบันทึก..." : "บันทึกที่อยู่จัดส่ง"}</button>
             </div>
           </div>
         </div>
