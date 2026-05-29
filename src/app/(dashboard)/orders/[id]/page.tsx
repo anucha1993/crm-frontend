@@ -193,6 +193,7 @@ export default function OrderDetailPage() {
   const [showDeliveryForm, setShowDeliveryForm] = useState(false);
   const [remainingItems, setRemainingItems] = useState<RemainingItem[]>([]);
   const [deliveryQuantities, setDeliveryQuantities] = useState<Record<number, string>>({});
+  const [excludedDeliveryItems, setExcludedDeliveryItems] = useState<Set<number>>(new Set());
   const [deliveryDate, setDeliveryDate] = useState("");
   const [deliveryNotes, setDeliveryNotes] = useState("");
   const [deliverySaving, setDeliverySaving] = useState(false);
@@ -469,6 +470,7 @@ export default function OrderDetailPage() {
         if (item.remaining > 0) qtys[item.order_item_id] = String(item.remaining);
       });
       setDeliveryQuantities(qtys);
+      setExcludedDeliveryItems(new Set());
       setDeliveryDate(new Date().toISOString().split("T")[0]);
       setDeliveryNotes("");
       setShowDeliveryForm(true);
@@ -480,7 +482,7 @@ export default function OrderDetailPage() {
   const handleCreateDelivery = async () => {
     if (!token || !order) return;
     const items = Object.entries(deliveryQuantities)
-      .filter(([, qty]) => Number(qty) > 0)
+      .filter(([orderItemId, qty]) => Number(qty) > 0 && !excludedDeliveryItems.has(Number(orderItemId)))
       .map(([orderItemId, qty]) => ({
         order_item_id: Number(orderItemId),
         quantity: Number(qty),
@@ -1486,11 +1488,45 @@ export default function OrderDetailPage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">รายการสินค้า</label>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-sm font-medium text-gray-700">รายการสินค้า</label>
+                    {excludedDeliveryItems.size > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setExcludedDeliveryItems(new Set())}
+                        className="text-xs text-blue-600 hover:underline"
+                      >
+                        แสดงรายการที่ลบ ({excludedDeliveryItems.size})
+                      </button>
+                    )}
+                  </div>
                   <div className="space-y-3">
-                    {remainingItems.filter(item => item.remaining > 0).map((item) => (
-                      <div key={item.order_item_id} className="bg-gray-50 rounded-lg p-3">
-                        <div className="flex items-center justify-between mb-1">
+                    {remainingItems
+                      .filter(item => item.remaining > 0 && !excludedDeliveryItems.has(item.order_item_id))
+                      .map((item) => (
+                      <div key={item.order_item_id} className="bg-gray-50 rounded-lg p-3 relative">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setExcludedDeliveryItems((prev) => {
+                              const next = new Set(prev);
+                              next.add(item.order_item_id);
+                              return next;
+                            });
+                            setDeliveryQuantities((prev) => {
+                              const next = { ...prev };
+                              delete next[item.order_item_id];
+                              return next;
+                            });
+                          }}
+                          title="ไม่จัดส่งรายการนี้"
+                          className="absolute top-2 right-2 p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                        <div className="flex items-center justify-between mb-1 pr-7">
                           <span className="text-sm font-medium text-gray-800">{item.description}</span>
                           <span className="text-xs text-gray-500">
                             คงเหลือ {item.remaining.toLocaleString()} / {item.quantity.toLocaleString()} {item.unit}
@@ -1519,8 +1555,12 @@ export default function OrderDetailPage() {
                         </div>
                       </div>
                     ))}
-                    {remainingItems.filter(item => item.remaining > 0).length === 0 && (
-                      <p className="text-sm text-gray-400 text-center py-4">สินค้าทั้งหมดถูกจัดส่งครบแล้ว</p>
+                    {remainingItems.filter(item => item.remaining > 0 && !excludedDeliveryItems.has(item.order_item_id)).length === 0 && (
+                      <p className="text-sm text-gray-400 text-center py-4">
+                        {remainingItems.filter(item => item.remaining > 0).length === 0
+                          ? "สินค้าทั้งหมดถูกจัดส่งครบแล้ว"
+                          : "ไม่มีรายการที่เลือกจัดส่ง"}
+                      </p>
                     )}
                   </div>
                 </div>
@@ -1528,6 +1568,7 @@ export default function OrderDetailPage() {
                 {/* Total weight estimate */}
                 {(() => {
                   const totalWeight = remainingItems.reduce((sum, item) => {
+                    if (excludedDeliveryItems.has(item.order_item_id)) return sum;
                     const qty = Number(deliveryQuantities[item.order_item_id] || 0);
                     return sum + qty * item.weight_per_unit;
                   }, 0);
