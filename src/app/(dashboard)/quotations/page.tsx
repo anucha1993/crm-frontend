@@ -10,6 +10,7 @@ interface Quotation {
   id: number;
   quotation_number: string;
   customer: { id: number; name: string; code: string } | null;
+  shipping_address: { id: number; label: string | null; contact_name: string | null; phone: string | null; address: string } | null;
   status: string;
   subtotal: string;
   discount_amount: string;
@@ -144,6 +145,7 @@ export default function QuotationsPage() {
                   <tr className="border-b border-gray-100 bg-gray-50">
                     <th className="text-left px-5 py-3 font-medium text-gray-500">เลขที่</th>
                     <th className="text-left px-5 py-3 font-medium text-gray-500">ลูกค้า</th>
+                    <th className="text-left px-5 py-3 font-medium text-gray-500">ที่อยู่จัดส่ง</th>
                     <th className="text-left px-5 py-3 font-medium text-gray-500">ประเภท</th>
                     <th className="text-left px-5 py-3 font-medium text-gray-500">สถานะ</th>
                     <th className="text-right px-5 py-3 font-medium text-gray-500">ยอดรวม</th>
@@ -164,6 +166,27 @@ export default function QuotationsPage() {
                         <td className="px-5 py-4">
                           <div className="font-medium text-gray-800">{q.customer?.name || "-"}</div>
                           <div className="text-xs text-gray-400">{q.customer?.code}</div>
+                        </td>
+                        <td className="px-5 py-4 max-w-[260px]">
+                          {q.shipping_address ? (
+                            <div className="space-y-0.5">
+                              {q.shipping_address.label && (
+                                <div className="text-xs font-medium text-gray-700">{q.shipping_address.label}</div>
+                              )}
+                              <div className="text-xs text-gray-500 line-clamp-2" title={q.shipping_address.address}>
+                                {q.shipping_address.address}
+                              </div>
+                              {(q.shipping_address.contact_name || q.shipping_address.phone) && (
+                                <div className="text-xs text-gray-400">
+                                  {q.shipping_address.contact_name}
+                                  {q.shipping_address.contact_name && q.shipping_address.phone && " · "}
+                                  {q.shipping_address.phone}
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-gray-400 italic">ตามที่อยู่ลูกค้า</span>
+                          )}
                         </td>
                         <td className="px-5 py-4">
                           {q.account_type === 'tax' ? (
