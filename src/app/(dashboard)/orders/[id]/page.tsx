@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Header from "@/components/Header";
 import ProductSearchSelect from "@/components/ProductSearchSelect";
@@ -49,6 +49,10 @@ interface Payment {
   slip_ref: string | null;
   sender_name: string | null;
   sender_bank: string | null;
+  sender_account: string | null;
+  receiver_name: string | null;
+  receiver_bank: string | null;
+  receiver_account: string | null;
   transfer_amount: string | null;
   transfer_date: string | null;
   creator: { id: number; name: string } | null;
@@ -62,6 +66,15 @@ interface TimelineEntry {
   action: string;
   summary: string;
   user: { id: number; name: string } | null;
+  created_at: string;
+}
+
+interface SlipUsage {
+  payment_id: number;
+  payment_number: string;
+  order_id: number;
+  order_number: string | null;
+  status: string;
   created_at: string;
 }
 
@@ -177,7 +190,10 @@ export default function OrderDetailPage() {
   // Slip verification (multi)
   const [slipVerifying, setSlipVerifying] = useState<Record<number, boolean>>({});
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [slipResults, setSlipResults] = useState<Record<number, { code: string; message?: string; data?: any }>>({});
+  const [slipResults, setSlipResults] = useState<Record<number, { code: string; message?: string; data?: any; existing_usage?: SlipUsage[] }>>({});
+  // Object URLs for previewing attached slip images
+  const slipPreviewUrls = useMemo(() => slipFiles.map((f) => URL.createObjectURL(f)), [slipFiles]);
+  useEffect(() => () => { slipPreviewUrls.forEach((u) => URL.revokeObjectURL(u)); }, [slipPreviewUrls]);
 
   // Reject modal
   const [rejectingPayment, setRejectingPayment] = useState<Payment | null>(null);
@@ -187,7 +203,7 @@ export default function OrderDetailPage() {
   const [changingStatus, setChangingStatus] = useState(false);
 
   // Slip preview
-  const [previewSlip, setPreviewSlip] = useState<string | null>(null);
+  const [previewSlip, setPreviewSlip] = useState<Payment | null>(null);
 
   // Delivery form
   const [showDeliveryForm, setShowDeliveryForm] = useState(false);
@@ -292,7 +308,8 @@ export default function OrderDetailPage() {
         const formData = new FormData();
         formData.append('slip_image', file);
         if (paymentAmount) formData.append('amount', paymentAmount);
-        const result = await api.upload<{ code: string; message?: string; data?: Record<string, unknown> }>('/payments/verify-slip', formData, token);
+        formData.append('exclude_order_id', String(orderId));
+        const result = await api.upload<{ code: string; message?: string; data?: Record<string, unknown>; existing_usage?: SlipUsage[] }>('/payments/verify-slip', formData, token);
         setSlipResults((prev) => {
           const updated = { ...prev, [fileIndex]: result };
           // Sum all verified slip amounts
@@ -348,7 +365,7 @@ export default function OrderDetailPage() {
     '200403': { label: 'วันที่โอนไม่ตรง', color: 'text-orange-700 bg-orange-50 border-orange-200' },
     '200404': { label: 'ไม่พบข้อมูลสลิปในระบบธนาคาร', color: 'text-red-700 bg-red-50 border-red-200' },
     '200500': { label: 'สลิปปลอม', color: 'text-red-700 bg-red-50 border-red-200' },
-    '200501': { label: 'สลิปซ้ำ', color: 'text-red-700 bg-red-50 border-red-200' },
+    '200501': { label: 'สลิปซ้ำ — เคยส่งตรวจกับธนาคารมาก่อน', color: 'text-blue-700 bg-blue-50 border-blue-200' },
     'error': { label: 'ตรวจสอบสลิปไม่สำเร็จ', color: 'text-red-700 bg-red-50 border-red-200' },
   };
 
@@ -377,13 +394,13 @@ export default function OrderDetailPage() {
           '200403': 'วันที่โอนไม่ตรง',
           '200404': 'ไม่พบข้อมูลสลิปในระบบธนาคาร',
           '200500': 'สลิปปลอม',
-          '200501': 'สลิปซ้ำ',
+          '200501': 'สลิปซ้ำ — เคยส่งตรวจกับธนาคารมาก่อน',
           'error': 'ตรวจสอบสลิปไม่สำเร็จ',
         };
         const lines = transferPayments.map((p, i) => {
           const code = p.slip_status_code || '';
           const msg = SLIP_CODES[code] || `รหัส: ${code}`;
-          const icon = p.slip_verified ? '✅' : '⚠️';
+          const icon = p.slip_verified ? '✅' : code === '200501' ? '↺' : '⚠️';
           return `${icon} สลิป ${i + 1}: ${msg}`;
         });
         alert(lines.join('\n'));
@@ -1052,9 +1069,10 @@ export default function OrderDetailPage() {
                                 <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${pst.color}`}>{pst.label}</span>
                                 {p.is_deposit && <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700">มัดจำ</span>}
                                 {p.slip_verified && <span className="inline-flex px-1.5 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700">✓ Slip ยืนยัน</span>}
-                                {p.slip_status_code && !p.slip_verified && p.slip_status_code !== 'error' && (
+                                {p.slip_status_code === '200501' && !p.slip_verified && <span className="inline-flex px-1.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700">↺ Slip ตรวจซ้ำ</span>}
+                                {p.slip_status_code && !p.slip_verified && p.slip_status_code !== 'error' && p.slip_status_code !== '200501' && (
                                   <span className="inline-flex px-1.5 py-0.5 rounded-full text-xs font-medium bg-orange-50 text-orange-700">
-                                    ⚠ Slip: {({'200401':'ผู้รับไม่ตรง','200402':'ยอดไม่ตรง','200404':'ไม่พบสลิป','200500':'สลิปปลอม','200501':'สลิปซ้ำ'} as Record<string,string>)[p.slip_status_code] || p.slip_status_code}
+                                    ⚠ Slip: {({'200401':'ผู้รับไม่ตรง','200402':'ยอดไม่ตรง','200404':'ไม่พบสลิป','200500':'สลิปปลอม'} as Record<string,string>)[p.slip_status_code] || p.slip_status_code}
                                   </span>
                                 )}
                               </div>
@@ -1062,7 +1080,8 @@ export default function OrderDetailPage() {
                                 <span className="text-gray-500">{METHOD_MAP[p.method] || p.method}</span>
                                 <span className="font-semibold text-gray-800">{formatCurrency(p.amount)} บาท</span>
                               </div>
-                              {p.sender_name && <p className="text-xs text-gray-400 mt-1">ผู้โอน: {p.sender_name} ({p.sender_bank}){p.transfer_amount ? ` — ${formatCurrency(p.transfer_amount)} บาท` : ''}</p>}
+                              {p.sender_name && <p className="text-xs text-gray-400 mt-1">ผู้โอน: {p.sender_name}{p.sender_bank ? ` (${p.sender_bank})` : ''}{p.sender_account ? ` ${p.sender_account}` : ''}</p>}
+                              {p.transfer_amount && <p className="text-xs text-gray-400 mt-0.5">ยอดโอน: {formatCurrency(p.transfer_amount)} บาท{p.transfer_date ? ` · ${formatDate(p.transfer_date)}` : ''}</p>}
                               {p.slip_ref && <p className="text-xs text-gray-400 mt-0.5">Ref: {p.slip_ref}</p>}
                               {p.notes && <p className="text-xs text-gray-400 mt-1">{p.notes}</p>}
                               {p.reject_reason && <p className="text-xs text-red-500 mt-1">เหตุผล: {p.reject_reason}</p>}
@@ -1074,7 +1093,7 @@ export default function OrderDetailPage() {
                             </div>
                             <div className="flex items-center gap-1">
                               {p.slip_image && (
-                                <button onClick={() => setPreviewSlip(`${apiUrl}/storage/${p.slip_image}`)} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="ดูสลิป">
+                                <button onClick={() => setPreviewSlip(p)} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="ดูสลิป">
                                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                                 </button>
                               )}
@@ -1307,14 +1326,14 @@ export default function OrderDetailPage() {
         {/* Payment form modal */}
         {showPaymentForm && (
           <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+            <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[92vh] flex flex-col">
               <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
                 <h3 className="font-semibold text-gray-800">เพิ่มการชำระเงิน</h3>
                 <button onClick={() => setShowPaymentForm(false)} className="p-1 hover:bg-gray-100 rounded-lg">
                   <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                 </button>
               </div>
-              <div className="p-5 space-y-4">
+              <div className="p-5 space-y-4 overflow-y-auto flex-1">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">ช่องทางชำระเงิน</label>
                   <div className="grid grid-cols-3 gap-2">
@@ -1364,6 +1383,7 @@ export default function OrderDetailPage() {
                           const code = result?.code || '';
                           const info = SLIP_CODES[code] || null;
                           const isSuccess = code === '200000' || code === '200200';
+                          const isDuplicate = code === '200501';
                           const d = result?.data;
                           return (
                             <div key={idx} className={`rounded-lg border p-3 text-sm ${info ? info.color : 'border-gray-200 bg-gray-50'}`}>
@@ -1376,6 +1396,13 @@ export default function OrderDetailPage() {
                                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                                 </button>
                               </div>
+                              <div className="mt-2 flex gap-3">
+                                {slipPreviewUrls[idx] && (
+                                  <a href={slipPreviewUrls[idx]} target="_blank" rel="noopener noreferrer" title="คลิกเพื่อดูภาพขนาดเต็ม" className="flex-shrink-0">
+                                    <img src={slipPreviewUrls[idx]} alt={file.name} className="w-28 h-40 object-cover rounded-lg border border-gray-200 bg-white cursor-zoom-in" />
+                                  </a>
+                                )}
+                                <div className="flex-1 min-w-0">
                               {verifying && (
                                 <div className="mt-2 flex items-center gap-2 text-blue-600">
                                   <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
@@ -1387,6 +1414,8 @@ export default function OrderDetailPage() {
                                   <div className="mt-2 flex items-center gap-1.5 font-medium">
                                     {isSuccess ? (
                                       <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                    ) : isDuplicate ? (
+                                      <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
                                     ) : (
                                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M12 3a9 9 0 100 18 9 9 0 000-18z" /></svg>
                                     )}
@@ -1394,13 +1423,38 @@ export default function OrderDetailPage() {
                                   </div>
                                   {d && (
                                     <div className="mt-1 space-y-0.5 text-xs text-gray-700">
-                                      {d.transRef && <div><span className="text-gray-500">Ref:</span> {d.transRef}</div>}
+                                      {d.dateTime && <div><span className="text-gray-500">วันที่โอน:</span> {formatDate(d.dateTime)}</div>}
                                       {d.amount && <div><span className="text-gray-500">จำนวนเงิน:</span> {Number(d.amount).toLocaleString('th-TH', { minimumFractionDigits: 2 })} บาท</div>}
-                                      {d.sender?.account?.name?.th && <div><span className="text-gray-500">ผู้โอน:</span> {d.sender.account.name.th}</div>}
+                                      {(() => { const n = typeof d.sender?.account?.name === 'string' ? d.sender.account.name : d.sender?.account?.name?.th; return n ? <div><span className="text-gray-500">ผู้โอน:</span> {n}</div> : null; })()}
+                                      {(() => {
+                                        const bank = typeof d.sender?.bank?.name === 'string' ? d.sender.bank.name : d.sender?.bank?.name?.th;
+                                        const acc = d.sender?.account?.bank?.account;
+                                        const text = [bank, acc].filter(Boolean).join(' ');
+                                        return text ? <div><span className="text-gray-500">บัญชีที่โอน:</span> {text}</div> : null;
+                                      })()}
+                                      {(() => { const n = typeof d.receiver?.account?.name === 'string' ? d.receiver.account.name : d.receiver?.account?.name?.th; return n ? <div><span className="text-gray-500">ผู้รับ:</span> {n}</div> : null; })()}
+                                      {d.transRef && <div><span className="text-gray-500">Ref:</span> {d.transRef}</div>}
+                                    </div>
+                                  )}
+                                  {result.existing_usage && result.existing_usage.length > 0 && (
+                                    <div className="mt-2 rounded-lg bg-red-50 border border-red-200 p-2 text-xs text-red-700">
+                                      <div className="flex items-center gap-1.5 font-semibold">
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M12 3a9 9 0 100 18 9 9 0 000-18z" /></svg>
+                                        สลิปนี้ถูกใช้ชำระคำสั่งซื้ออื่นแล้ว
+                                      </div>
+                                      <ul className="mt-1 space-y-0.5 list-disc list-inside">
+                                        {result.existing_usage.map((u) => (
+                                          <li key={u.payment_id}>
+                                            {u.order_number || `#${u.order_id}`} ({u.payment_number}) — {u.status === 'approved' ? 'อนุมัติแล้ว' : 'รออนุมัติ'}
+                                          </li>
+                                        ))}
+                                      </ul>
                                     </div>
                                   )}
                                 </>
                               )}
+                                </div>
+                              </div>
                             </div>
                           );
                         })}
@@ -1457,11 +1511,86 @@ export default function OrderDetailPage() {
         {/* Slip preview modal */}
         {previewSlip && (
           <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={() => setPreviewSlip(null)}>
-            <div className="relative max-w-lg max-h-[80vh]" onClick={(e) => e.stopPropagation()}>
-              <button onClick={() => setPreviewSlip(null)} className="absolute -top-3 -right-3 w-8 h-8 bg-white rounded-full shadow flex items-center justify-center hover:bg-gray-100 transition-colors">
-                <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+              <button onClick={() => setPreviewSlip(null)} className="absolute top-3 right-3 w-9 h-9 bg-white/90 rounded-full shadow flex items-center justify-center hover:bg-gray-100 transition-colors z-20">
+                <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
-              <img src={previewSlip} alt="Slip" className="max-w-full max-h-[80vh] rounded-xl shadow-xl" />
+
+              {/* Verification banner */}
+              {previewSlip.slip_verified ? (
+                <div className="bg-green-600 text-white px-5 py-4 flex items-center gap-3">
+                  <span className="flex items-center justify-center w-11 h-11 rounded-full bg-white/20 text-2xl">✅</span>
+                  <div className="flex-1">
+                    <p className="font-semibold text-base">สลิปจริง · ตรวจสอบแล้ว</p>
+                    <p className="text-xs text-green-50">ยืนยันโดยระบบ Slip2Go</p>
+                  </div>
+                </div>
+              ) : previewSlip.slip_status_code === '200501' ? (
+                <div className="bg-blue-600 text-white px-5 py-4 flex items-center gap-3">
+                  <span className="flex items-center justify-center w-11 h-11 rounded-full bg-white/20 text-2xl">↺</span>
+                  <div className="flex-1">
+                    <p className="font-semibold text-base">สลิปซ้ำ · เคยส่งตรวจกับธนาคารมาก่อน</p>
+                    <p className="text-xs text-blue-50">เป็นสลิปจริงที่ธนาคารยืนยัน แต่เคยถูกส่งตรวจมาก่อน — โปรดยืนยันว่าไม่ได้แนบซ้ำโดยไม่ตั้งใจ</p>
+                  </div>
+                </div>
+              ) : previewSlip.slip_status_code && previewSlip.slip_status_code !== 'error' ? (
+                <div className="bg-orange-500 text-white px-5 py-4 flex items-center gap-3">
+                  <span className="flex items-center justify-center w-11 h-11 rounded-full bg-white/20 text-2xl">⚠️</span>
+                  <div className="flex-1">
+                    <p className="font-semibold text-base">สลิปไม่ผ่านการตรวจสอบ</p>
+                    <p className="text-xs text-orange-50">
+                      {({'200401':'ผู้รับไม่ตรง','200402':'ยอดไม่ตรง','200404':'ไม่พบสลิป','200500':'สลิปปลอม'} as Record<string,string>)[previewSlip.slip_status_code] || previewSlip.slip_status_code}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-gray-500 text-white px-5 py-4 flex items-center gap-3">
+                  <span className="flex items-center justify-center w-11 h-11 rounded-full bg-white/20 text-2xl">📄</span>
+                  <div className="flex-1">
+                    <p className="font-semibold text-base">ยังไม่ได้ตรวจสอบอัตโนมัติ</p>
+                    <p className="text-xs text-gray-200">กรุณาตรวจสอบความถูกต้องด้วยตนเอง</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Body: detail + image side by side on desktop */}
+              <div className="flex-1 overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-0">
+                {/* Detail */}
+                <div className="p-5 space-y-2.5 text-sm text-gray-600 order-2 md:order-1">
+                  <h4 className="font-semibold text-gray-800 text-base mb-1">รายละเอียดการโอน</h4>
+                  {previewSlip.transfer_date && (
+                    <div className="flex justify-between gap-3 border-b border-gray-50 pb-2"><span className="text-gray-500">วันที่โอน</span><span className="text-gray-800 font-medium text-right">{formatDate(previewSlip.transfer_date)}</span></div>
+                  )}
+                  {previewSlip.transfer_amount && (
+                    <div className="flex justify-between gap-3 border-b border-gray-50 pb-2"><span className="text-gray-500">ยอดโอน</span><span className="text-green-700 font-semibold text-right">{formatCurrency(previewSlip.transfer_amount)} บาท</span></div>
+                  )}
+                  {previewSlip.sender_name && (
+                    <div className="flex justify-between gap-3 border-b border-gray-50 pb-2"><span className="text-gray-500">ผู้โอน</span><span className="text-gray-800 font-medium text-right">{previewSlip.sender_name}</span></div>
+                  )}
+                  {previewSlip.sender_bank && (
+                    <div className="flex justify-between gap-3 border-b border-gray-50 pb-2"><span className="text-gray-500">ธนาคารผู้โอน</span><span className="text-gray-800 text-right">{previewSlip.sender_bank}</span></div>
+                  )}
+                  {previewSlip.sender_account && (
+                    <div className="flex justify-between gap-3 border-b border-gray-50 pb-2"><span className="text-gray-500">บัญชีที่โอน</span><span className="text-gray-800 font-mono text-right">{previewSlip.sender_account}</span></div>
+                  )}
+                  {previewSlip.receiver_name && (
+                    <div className="flex justify-between gap-3 border-b border-gray-50 pb-2"><span className="text-gray-500">ผู้รับ</span><span className="text-gray-800 font-medium text-right">{previewSlip.receiver_name}{previewSlip.receiver_bank ? ` (${previewSlip.receiver_bank})` : ''}</span></div>
+                  )}
+                  {previewSlip.slip_ref && (
+                    <div className="flex justify-between gap-3"><span className="text-gray-500">Ref</span><span className="text-gray-800 font-mono text-right break-all">{previewSlip.slip_ref}</span></div>
+                  )}
+                  {!previewSlip.transfer_date && !previewSlip.transfer_amount && !previewSlip.sender_name && !previewSlip.slip_ref && (
+                    <p className="text-gray-400 text-sm">ไม่มีข้อมูลรายละเอียดการโอน</p>
+                  )}
+                </div>
+
+                {/* Image */}
+                <div className="bg-gray-100 flex items-center justify-center p-4 order-1 md:order-2 min-h-[300px]">
+                  <a href={`${apiUrl}/storage/${previewSlip.slip_image}`} target="_blank" rel="noopener noreferrer" title="คลิกเพื่อดูภาพขนาดเต็ม">
+                    <img src={`${apiUrl}/storage/${previewSlip.slip_image}`} alt="Slip" className="max-w-full max-h-[70vh] object-contain rounded-lg shadow cursor-zoom-in" />
+                  </a>
+                </div>
+              </div>
             </div>
           </div>
         )}

@@ -81,6 +81,13 @@ export default function PaymentsPage() {
 
   useEffect(() => { fetchPayments(); }, [fetchPayments]);
 
+  // Sync status filter with URL query (sidebar menu navigation)
+  useEffect(() => {
+    const urlStatus = searchParams.get("status") || "";
+    setFilterStatus((prev) => (prev !== urlStatus ? urlStatus : prev));
+    setPage(1);
+  }, [searchParams]);
+
   const formatCurrency = (v: string | number) =>
     Number(v).toLocaleString("th-TH", { minimumFractionDigits: 2 });
 

@@ -14,6 +14,7 @@ interface CustomerRow {
   level_name: string;
   level_color: string;
   order_count: number;
+  delivery_count: number;
   total_sales: string;
   total_paid: string;
   total_remaining: string;
@@ -45,6 +46,7 @@ export default function SalesByCustomerPage() {
   const grandPaid = customers.reduce((s, c) => s + Number(c.total_paid), 0);
   const grandRemaining = customers.reduce((s, c) => s + Number(c.total_remaining), 0);
   const grandOrders = customers.reduce((s, c) => s + c.order_count, 0);
+  const grandDeliveries = customers.reduce((s, c) => s + Number(c.delivery_count || 0), 0);
 
   return (
     <>
@@ -74,6 +76,7 @@ export default function SalesByCustomerPage() {
                     { header: 'ชื่อลูกค้า', key: 'name', width: 25 },
                     { header: 'ระดับ', key: 'level_name', width: 12 },
                     { header: 'จำนวนออเดอร์', key: 'order_count', width: 15 },
+                    { header: 'จำนวนใบส่งของ', key: 'delivery_count', width: 15 },
                     { header: 'ยอดขาย', key: 'total_sales', width: 18, format: (v) => Number(v) },
                     { header: 'ชำระแล้ว', key: 'total_paid', width: 18, format: (v) => Number(v) },
                     { header: 'ค้างชำระ', key: 'total_remaining', width: 18, format: (v) => Number(v) },
@@ -150,6 +153,7 @@ export default function SalesByCustomerPage() {
                     <th className="text-left px-4 py-3 font-medium text-gray-500">ชื่อลูกค้า</th>
                     <th className="text-center px-4 py-3 font-medium text-gray-500">ระดับ</th>
                     <th className="text-right px-4 py-3 font-medium text-gray-500">จำนวนออเดอร์</th>
+                    <th className="text-right px-4 py-3 font-medium text-gray-500">จำนวนใบส่งของ</th>
                     <th className="text-right px-4 py-3 font-medium text-gray-500">ยอดขาย</th>
                     <th className="text-right px-4 py-3 font-medium text-gray-500">ชำระแล้ว</th>
                     <th className="text-right px-4 py-3 font-medium text-gray-500">ค้างชำระ</th>
@@ -168,6 +172,7 @@ export default function SalesByCustomerPage() {
                         <span className="px-2 py-0.5 rounded-full text-xs font-medium" style={{ backgroundColor: c.level_color + "20", color: c.level_color }}>{c.level_name}</span>
                       </td>
                       <td className="px-4 py-2.5 text-right">{c.order_count}</td>
+                      <td className="px-4 py-2.5 text-right">{c.delivery_count ?? 0}</td>
                       <td className="px-4 py-2.5 text-right font-medium">฿{fmt(c.total_sales)}</td>
                       <td className="px-4 py-2.5 text-right text-green-600">฿{fmt(c.total_paid)}</td>
                       <td className="px-4 py-2.5 text-right text-red-600">฿{fmt(c.total_remaining)}</td>
@@ -175,7 +180,7 @@ export default function SalesByCustomerPage() {
                     </tr>
                   ))}
                   {sorted.length === 0 && (
-                    <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-400">ไม่พบข้อมูล</td></tr>
+                    <tr><td colSpan={10} className="px-4 py-8 text-center text-gray-400">ไม่พบข้อมูล</td></tr>
                   )}
                 </tbody>
                 {sorted.length > 0 && (
@@ -183,6 +188,7 @@ export default function SalesByCustomerPage() {
                     <tr>
                       <td colSpan={4} className="px-4 py-3">รวมทั้งหมด</td>
                       <td className="px-4 py-3 text-right">{grandOrders}</td>
+                      <td className="px-4 py-3 text-right">{grandDeliveries}</td>
                       <td className="px-4 py-3 text-right">฿{fmt(grandTotal)}</td>
                       <td className="px-4 py-3 text-right text-green-600">฿{fmt(grandPaid)}</td>
                       <td className="px-4 py-3 text-right text-red-600">฿{fmt(grandRemaining)}</td>
