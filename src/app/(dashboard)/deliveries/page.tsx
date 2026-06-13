@@ -68,6 +68,13 @@ export default function DeliveriesPage() {
 
   useEffect(() => { fetchDeliveries(); }, [fetchDeliveries]);
 
+  // Sync status filter with URL query (sidebar menu navigation)
+  useEffect(() => {
+    const urlStatus = searchParams.get("status") || "";
+    setFilterStatus((prev) => (prev !== urlStatus ? urlStatus : prev));
+    setPage(1);
+  }, [searchParams]);
+
   const formatDate = (d: string) =>
     new Date(d).toLocaleDateString("th-TH", { day: "2-digit", month: "short", year: "numeric" });
 

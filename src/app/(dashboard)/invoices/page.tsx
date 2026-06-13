@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import Header from "@/components/Header";
 import { useAuth } from "@/lib/auth-context";
 import { api } from "@/lib/api";
@@ -27,10 +28,11 @@ export default function InvoicesPage() {
   const { token, accountType } = useAuth();
   const isCash = accountType === 'cash';
   const docLabel = isCash ? 'บิลเงินสด' : 'ใบกำกับภาษี';
+  const searchParams = useSearchParams();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [filterStatus, setFilterStatus] = useState("");
+  const [filterStatus, setFilterStatus] = useState(searchParams.get("status") || "");
   const [page, setPage] = useState(1);
   const [lastPage, setLastPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -55,6 +57,13 @@ export default function InvoicesPage() {
   }, [token, search, filterStatus, page]);
 
   useEffect(() => { fetchInvoices(); }, [fetchInvoices]);
+
+  // Sync status filter with URL query (sidebar menu navigation)
+  useEffect(() => {
+    const urlStatus = searchParams.get("status") || "";
+    setFilterStatus((prev) => (prev !== urlStatus ? urlStatus : prev));
+    setPage(1);
+  }, [searchParams]);
 
   const formatCurrency = (v: string | number) =>
     Number(v).toLocaleString("th-TH", { minimumFractionDigits: 2 });

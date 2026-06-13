@@ -64,6 +64,13 @@ export default function QuotationsPage() {
 
   useEffect(() => { fetchQuotations(); }, [fetchQuotations]);
 
+  // Sync status filter with URL query (sidebar menu navigation)
+  useEffect(() => {
+    const urlStatus = searchParams.get("status") || "";
+    setFilterStatus((prev) => (prev !== urlStatus ? urlStatus : prev));
+    setPage(1);
+  }, [searchParams]);
+
   const handleDelete = async (q: Quotation) => {
     if (!confirm(`ต้องการลบใบเสนอราคา "${q.quotation_number}" ?`)) return;
     try {
