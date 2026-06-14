@@ -130,16 +130,18 @@ export default function DashboardPage() {
           <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 p-5">
             <h3 className="font-semibold text-gray-800 mb-4">ยอดขาย 12 เดือน</h3>
             {data.sales_trend.length > 0 ? (
-              <div className="flex items-end gap-1 h-48">
+              <div className="flex gap-1 h-48">
                 {data.sales_trend.map((t) => {
                   const h = (Number(t.total) / maxTrend) * 100;
                   const monthNum = parseInt(t.month.split("-")[1]);
                   const monthNames = ["", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
                   return (
                     <div key={t.month} className="flex-1 flex flex-col items-center gap-1">
-                      <span className="text-[10px] text-gray-500">{fmtShort(Number(t.total))}</span>
-                      <div className="w-full bg-green-500 rounded-t" style={{ height: `${Math.max(h, 2)}%` }} title={`${t.month}: ${fmt(Number(t.total))} (${t.count} orders)`} />
-                      <span className="text-[10px] text-gray-400">{monthNames[monthNum]}</span>
+                      <span className="text-[10px] text-gray-500 shrink-0">{fmtShort(Number(t.total))}</span>
+                      <div className="flex-1 w-full flex items-end">
+                        <div className="w-full bg-green-500 rounded-t transition-all" style={{ height: `${Math.max(h, 2)}%` }} title={`${t.month}: ${fmt(Number(t.total))} (${t.count} orders)`} />
+                      </div>
+                      <span className="text-[10px] text-gray-400 shrink-0">{monthNames[monthNum]}</span>
                     </div>
                   );
                 })}

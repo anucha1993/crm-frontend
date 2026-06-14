@@ -126,6 +126,7 @@ interface RemainingItem {
   remaining: number;
   unit: string;
   weight_per_unit: number;
+  product?: { id: number; name: string; code: string } | null;
 }
 
 interface OrderInvoice {
@@ -1656,7 +1657,7 @@ export default function OrderDetailPage() {
                           </svg>
                         </button>
                         <div className="flex items-center justify-between mb-1 pr-7">
-                          <span className="text-sm font-medium text-gray-800">{item.description}</span>
+                          <span className="text-sm font-medium text-gray-800">{item.product?.name || item.description || "-"}</span>
                           <span className="text-xs text-gray-500">
                             คงเหลือ {item.remaining.toLocaleString()} / {item.quantity.toLocaleString()} {item.unit}
                           </span>
