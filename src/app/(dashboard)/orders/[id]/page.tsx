@@ -718,7 +718,7 @@ export default function OrderDetailPage() {
   const percent = getPaymentPercent();
   const st = ORDER_STATUS_MAP[order.status] || ORDER_STATUS_MAP.pending;
   const ds = DELIVERY_STATUS_MAP[order.delivery_status] || DELIVERY_STATUS_MAP.not_delivered;
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace("/api", "") || "http://localhost:7000";
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/api$/, "") || "http://localhost:7000";
 
   return (
     <>

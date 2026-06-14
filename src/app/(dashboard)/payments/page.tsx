@@ -58,7 +58,7 @@ export default function PaymentsPage() {
   // Slip preview
   const [previewSlip, setPreviewSlip] = useState<string | null>(null);
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace("/api", "") || "http://localhost:7000";
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/api$/, "") || "http://localhost:7000";
 
   const fetchPayments = useCallback(async () => {
     if (!token) return;

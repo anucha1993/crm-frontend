@@ -71,7 +71,7 @@ export default function PaymentScanPage() {
   const scanIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastScannedRef = useRef<string>("");
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace("/api", "") || "http://localhost:7000";
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/api$/, "") || "http://localhost:7000";
 
   const formatCurrency = (v: string | number) =>
     Number(v).toLocaleString("th-TH", { minimumFractionDigits: 2 });
