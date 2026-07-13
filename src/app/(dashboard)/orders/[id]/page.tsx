@@ -125,8 +125,11 @@ interface RemainingItem {
   delivered: number;
   remaining: number;
   unit: string;
+  unit_price?: string | number;
+  thickness?: string | number | null;
+  length?: string | number | null;
   weight_per_unit: number;
-  product?: { id: number; name: string; code: string } | null;
+  product?: { id: number; name: string; code: string; sizes?: { length_unit: string | null }[] } | null;
 }
 
 interface OrderInvoice {
@@ -601,7 +604,14 @@ export default function OrderDetailPage() {
       const length = it.length ? Number(it.length) : null;
       const qty = Number(it.quantity) || 0;
       const price = Number(it.unit_price) || 0;
-      return { ...it, amount: String(calcItemAmount(thickness, length, qty, price)) };
+      return {
+        ...it,
+        thickness: thickness != null ? String(thickness) : null,
+        length: length != null ? String(length) : null,
+        quantity: String(qty),
+        unit_price: String(price),
+        amount: String(calcItemAmount(thickness, length, qty, price)),
+      };
     }));
     setEditDiscountType((order.discount_type as "percent" | "amount") || "amount");
     setEditDiscountValue(Number(order.discount_value) || 0);
@@ -1599,7 +1609,7 @@ export default function OrderDetailPage() {
         {/* Delivery form modal */}
         {showDeliveryForm && (
           <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col">
+            <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col">
               <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
                 <h3 className="font-semibold text-gray-800">สร้างใบส่งสินค้า</h3>
                 <button onClick={() => setShowDeliveryForm(false)} className="p-1 hover:bg-gray-100 rounded-lg">
@@ -1613,7 +1623,7 @@ export default function OrderDetailPage() {
                     type="date"
                     value={deliveryDate}
                     onChange={(e) => setDeliveryDate(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none text-sm"
+                    className="w-full sm:w-52 px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none text-sm"
                   />
                 </div>
 
@@ -1630,63 +1640,89 @@ export default function OrderDetailPage() {
                       </button>
                     )}
                   </div>
-                  <div className="space-y-3">
-                    {remainingItems
-                      .filter(item => item.remaining > 0 && !excludedDeliveryItems.has(item.order_item_id))
-                      .map((item) => (
-                      <div key={item.order_item_id} className="bg-gray-50 rounded-lg p-3 relative">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setExcludedDeliveryItems((prev) => {
-                              const next = new Set(prev);
-                              next.add(item.order_item_id);
-                              return next;
-                            });
-                            setDeliveryQuantities((prev) => {
-                              const next = { ...prev };
-                              delete next[item.order_item_id];
-                              return next;
-                            });
-                          }}
-                          title="ไม่จัดส่งรายการนี้"
-                          className="absolute top-2 right-2 p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                          </svg>
-                        </button>
-                        <div className="flex items-center justify-between mb-1 pr-7">
-                          <span className="text-sm font-medium text-gray-800">{item.product?.name || item.description || "-"}</span>
-                          <span className="text-xs text-gray-500">
-                            คงเหลือ {item.remaining.toLocaleString()} / {item.quantity.toLocaleString()} {item.unit}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="number"
-                            min="0"
-                            max={item.remaining}
-                            step="1"
-                            value={deliveryQuantities[item.order_item_id] || ""}
-                            onChange={(e) => setDeliveryQuantities((prev) => ({
-                              ...prev,
-                              [item.order_item_id]: e.target.value,
-                            }))}
-                            placeholder="0"
-                            className="w-28 px-3 py-1.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none text-sm"
-                          />
-                          <span className="text-sm text-gray-500">{item.unit}</span>
-                          {item.weight_per_unit > 0 && deliveryQuantities[item.order_item_id] && Number(deliveryQuantities[item.order_item_id]) > 0 && (
-                            <span className="text-xs text-gray-400 ml-auto">
-                              ~{(Number(deliveryQuantities[item.order_item_id]) * item.weight_per_unit).toLocaleString("th-TH", { maximumFractionDigits: 2 })} กก.
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    ))}
+                  <div className="border border-gray-200 rounded-lg overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-gray-50 border-b border-gray-100 text-gray-500">
+                          <th className="text-left px-3 py-2 font-medium">รายการ</th>
+                          <th className="text-right px-3 py-2 font-medium">หนา</th>
+                          <th className="text-right px-3 py-2 font-medium">ยาว</th>
+                          <th className="text-right px-3 py-2 font-medium">ราคา/หน่วย</th>
+                          <th className="text-right px-3 py-2 font-medium">คงเหลือ</th>
+                          <th className="text-center px-3 py-2 font-medium">จำนวนที่จัดส่ง</th>
+                          <th className="px-2 py-2 w-8"></th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {remainingItems
+                          .filter(item => item.remaining > 0 && !excludedDeliveryItems.has(item.order_item_id))
+                          .map((item) => (
+                          <tr key={item.order_item_id} className="hover:bg-gray-50 align-top">
+                            <td className="px-3 py-2.5">
+                              <div className="font-medium text-gray-800">{item.product?.name || item.description || "-"}</div>
+                              {(item.product?.code || (item.description && item.description !== item.product?.name)) && (
+                                <div className="text-xs text-gray-400 mt-0.5">
+                                  {item.product?.code}
+                                  {item.description && item.description !== item.product?.name ? `${item.product?.code ? " — " : ""}${item.description}` : ""}
+                                </div>
+                              )}
+                            </td>
+                            <td className="px-3 py-2.5 text-right text-gray-600 whitespace-nowrap">{item.thickness ? Number(item.thickness).toFixed(2) : "-"}</td>
+                            <td className="px-3 py-2.5 text-right text-gray-600 whitespace-nowrap">{item.length ? `${Number(item.length).toFixed(2)} ${item.product?.sizes?.[0]?.length_unit || "เมตร"}` : "-"}</td>
+                            <td className="px-3 py-2.5 text-right text-gray-600 whitespace-nowrap">{item.unit_price != null && Number(item.unit_price) > 0 ? Number(item.unit_price).toLocaleString("th-TH", { minimumFractionDigits: 2 }) : "-"}</td>
+                            <td className="px-3 py-2.5 text-right text-gray-500 whitespace-nowrap">{item.remaining.toLocaleString()} / {item.quantity.toLocaleString()} {item.unit}</td>
+                            <td className="px-3 py-2.5">
+                              <div className="flex items-center justify-center gap-1.5">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max={item.remaining}
+                                  step="1"
+                                  value={deliveryQuantities[item.order_item_id] || ""}
+                                  onChange={(e) => setDeliveryQuantities((prev) => ({
+                                    ...prev,
+                                    [item.order_item_id]: e.target.value,
+                                  }))}
+                                  placeholder="0"
+                                  className="w-20 px-2 py-1.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none text-sm text-right"
+                                />
+                                <span className="text-xs text-gray-500">{item.unit}</span>
+                              </div>
+                              {item.weight_per_unit > 0 && deliveryQuantities[item.order_item_id] && Number(deliveryQuantities[item.order_item_id]) > 0 && (
+                                <div className="text-[11px] text-gray-400 text-center mt-1">
+                                  ~{(Number(deliveryQuantities[item.order_item_id]) * item.weight_per_unit).toLocaleString("th-TH", { maximumFractionDigits: 2 })} กก.
+                                </div>
+                              )}
+                            </td>
+                            <td className="px-2 py-2.5 text-center">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setExcludedDeliveryItems((prev) => {
+                                    const next = new Set(prev);
+                                    next.add(item.order_item_id);
+                                    return next;
+                                  });
+                                  setDeliveryQuantities((prev) => {
+                                    const next = { ...prev };
+                                    delete next[item.order_item_id];
+                                    return next;
+                                  });
+                                }}
+                                title="ไม่จัดส่งรายการนี้"
+                                className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                     {remainingItems.filter(item => item.remaining > 0 && !excludedDeliveryItems.has(item.order_item_id)).length === 0 && (
-                      <p className="text-sm text-gray-400 text-center py-4">
+                      <p className="text-sm text-gray-400 text-center py-6">
                         {remainingItems.filter(item => item.remaining > 0).length === 0
                           ? "สินค้าทั้งหมดถูกจัดส่งครบแล้ว"
                           : "ไม่มีรายการที่เลือกจัดส่ง"}
