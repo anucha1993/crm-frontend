@@ -5,6 +5,25 @@ import Header from "@/components/Header";
 import { useAuth } from "@/lib/auth-context";
 import { api, ApiError } from "@/lib/api";
 
+interface PendingPayment {
+  id: number;
+  payment_number: string;
+  method: string;
+  amount: string;
+  is_deposit: boolean;
+  status: string;
+  slip_image: string | null;
+  slip_verified: boolean;
+  slip_status_code: string | null;
+  slip_ref: string | null;
+  sender_name: string | null;
+  sender_bank: string | null;
+  transfer_amount: string | null;
+  transfer_date: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
 interface DeliveryLookup {
   id: number;
   delivery_number: string;
@@ -21,8 +40,12 @@ interface DeliveryLookup {
     quantity: string;
     unit: string;
     weight: string | null;
+    thickness: string | null;
+    length: string | null;
+    product?: { id: number; name: string; code: string; sizes?: { length_unit: string | null }[] } | null;
   }[];
   creator: { id: number; name: string } | null;
+  pending_payments?: PendingPayment[];
 }
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
@@ -50,6 +73,10 @@ export default function DeliveryScanPage() {
   const [scanning, setScanning] = useState(false);
   const [confirmLoading, setConfirmLoading] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
+  const [previewSlip, setPreviewSlip] = useState<string | null>(null);
+  const [slipActionLoading, setSlipActionLoading] = useState<number | null>(null);
+
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/api$/, "") || "http://localhost:7000";
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -147,13 +174,51 @@ export default function DeliveryScanPage() {
     }
   };
 
+  const refreshDelivery = async () => {
+    if (!token || !delivery) return;
+    try {
+      const data = await api.get<{ delivery: DeliveryLookup }>(`/deliveries/lookup/${encodeURIComponent(delivery.delivery_number)}`, token);
+      setDelivery(data.delivery);
+    } catch { /* noop */ }
+  };
+
+  const handleApproveSlip = async (paymentId: number) => {
+    if (!token || !confirm("ต้องการอนุมัติสลิปนี้?")) return;
+    setSlipActionLoading(paymentId);
+    try {
+      await api.post(`/payments/${paymentId}/approve`, {}, token);
+      await refreshDelivery();
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : "เกิดข้อผิดพลาด");
+    } finally {
+      setSlipActionLoading(null);
+    }
+  };
+
+  const handleRejectSlip = async (paymentId: number) => {
+    const reason = prompt("ระบุเหตุผลในการปฏิเสธ:");
+    if (!reason || !token) return;
+    setSlipActionLoading(paymentId);
+    try {
+      await api.post(`/payments/${paymentId}/reject`, { reason }, token);
+      await refreshDelivery();
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : "เกิดข้อผิดพลาด");
+    } finally {
+      setSlipActionLoading(null);
+    }
+  };
+
+  const formatCurrency = (v: string | number) =>
+    Number(v).toLocaleString("th-TH", { minimumFractionDigits: 2 });
+
   const formatDate = (d: string) =>
     new Date(d).toLocaleDateString("th-TH", { day: "2-digit", month: "short", year: "numeric" });
 
   return (
     <>
       <Header title="สแกน QR ยืนยันจัดส่ง" />
-      <div className="p-6 max-w-2xl mx-auto space-y-6">
+      <div className="p-6 max-w-5xl mx-auto space-y-6">
         {/* Scanner */}
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
@@ -267,25 +332,127 @@ export default function DeliveryScanPage() {
               {/* Items */}
               <div>
                 <h4 className="text-sm font-medium text-gray-700 mb-2">รายการสินค้า</h4>
+                <div className="overflow-x-auto -mx-2">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-100 bg-gray-50">
                       <th className="text-left px-3 py-2 font-medium text-gray-500 w-8">#</th>
                       <th className="text-left px-3 py-2 font-medium text-gray-500">รายการ</th>
-                      <th className="text-right px-3 py-2 font-medium text-gray-500">จำนวน</th>
+                      <th className="text-right px-3 py-2 font-medium text-gray-500 whitespace-nowrap">หนา</th>
+                      <th className="text-right px-3 py-2 font-medium text-gray-500 whitespace-nowrap">ยาว</th>
+                      <th className="text-right px-3 py-2 font-medium text-gray-500 whitespace-nowrap">จำนวน</th>
+                      <th className="text-right px-3 py-2 font-medium text-gray-500 whitespace-nowrap">น้ำหนัก (กก.)</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {delivery.items.map((item, i) => (
-                      <tr key={item.id}>
-                        <td className="px-3 py-2 text-gray-400">{i + 1}</td>
-                        <td className="px-3 py-2 text-gray-800">{item.description}</td>
-                        <td className="px-3 py-2 text-right text-gray-600">{Number(item.quantity).toLocaleString()} {item.unit}</td>
-                      </tr>
-                    ))}
+                    {delivery.items.map((item, i) => {
+                      const label = item.product?.name || item.description || "-";
+                      const sub = item.product?.code && item.description && item.description !== item.product.name
+                        ? `${item.product.code} — ${item.description}`
+                        : item.product?.code || "";
+                      return (
+                        <tr key={item.id}>
+                          <td className="px-3 py-2 text-gray-400 align-top">{i + 1}</td>
+                          <td className="px-3 py-2 text-gray-800">
+                            <div className="font-medium">{label}</div>
+                            {sub && <div className="text-xs text-gray-400">{sub}</div>}
+                          </td>
+                          <td className="px-3 py-2 text-right text-gray-600 align-top whitespace-nowrap">
+                            {item.thickness && Number(item.thickness) > 0 ? Number(item.thickness).toFixed(2) : "-"}
+                          </td>
+                          <td className="px-3 py-2 text-right text-gray-600 align-top whitespace-nowrap">
+                            {item.length && Number(item.length) > 0 ? (
+                              <>{Number(item.length).toFixed(2)} {item.product?.sizes?.[0]?.length_unit || "เมตร"}</>
+                            ) : "-"}
+                          </td>
+                          <td className="px-3 py-2 text-right text-gray-600 align-top whitespace-nowrap">{Number(item.quantity).toLocaleString()} {item.unit}</td>
+                          <td className="px-3 py-2 text-right text-gray-600 align-top whitespace-nowrap">
+                            {item.weight && Number(item.weight) > 0 ? Number(item.weight).toLocaleString("th-TH", { maximumFractionDigits: 2 }) : "-"}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
+                </div>
               </div>
+
+              {/* Pending slip approvals */}
+              {delivery.pending_payments && delivery.pending_payments.length > 0 && (
+                <div className="border border-orange-200 bg-orange-50 rounded-lg p-3 space-y-3">
+                  <h4 className="text-sm font-semibold text-orange-800 flex items-center gap-1">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M4.93 4.93l14.14 14.14M12 3a9 9 0 100 18 9 9 0 000-18z" />
+                    </svg>
+                    สลิป/การชำระเงินรอตรวจสอบ ({delivery.pending_payments.length})
+                  </h4>
+                  {delivery.pending_payments.map((p) => (
+                    <div key={p.id} className="bg-white rounded-lg border border-orange-100 p-3 space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="font-mono text-xs text-gray-500">{p.payment_number}</div>
+                          <div className="text-lg font-bold text-gray-800">
+                            {formatCurrency(p.amount)} <span className="text-xs font-normal text-gray-500">บาท</span>
+                            {p.is_deposit && <span className="ml-1 text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">มัดจำ</span>}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            {p.method === "cash" ? "เงินสด" : p.method === "pocket_money" ? "Pocket Money" : "โอนเงิน"}
+                            {p.sender_name && ` · ${p.sender_name}`}
+                            {p.sender_bank && ` (${p.sender_bank})`}
+                          </div>
+                          {p.slip_ref && <div className="text-xs text-gray-400 font-mono">Ref: {p.slip_ref}</div>}
+                        </div>
+                        {p.slip_image && (
+                          <button
+                            onClick={() => setPreviewSlip(`${apiUrl}/storage/${p.slip_image}`)}
+                            className="shrink-0"
+                            title="ดูสลิป"
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={`${apiUrl}/storage/${p.slip_image}`}
+                              alt="slip"
+                              className="w-16 h-16 object-cover rounded border border-gray-200 hover:border-orange-400"
+                            />
+                          </button>
+                        )}
+                      </div>
+
+                      {p.slip_verified && (
+                        <div className="text-xs text-green-700 bg-green-50 px-2 py-1 rounded border border-green-200 inline-flex items-center gap-1">
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                          สลิปยืนยันถูกต้อง
+                        </div>
+                      )}
+
+                      <div className="flex gap-2 pt-1">
+                        {p.slip_image && (
+                          <button
+                            onClick={() => setPreviewSlip(`${apiUrl}/storage/${p.slip_image}`)}
+                            className="flex-1 px-3 py-2 text-xs bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium"
+                          >
+                            ดูสลิป
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleApproveSlip(p.id)}
+                          disabled={slipActionLoading === p.id}
+                          className="flex-1 px-3 py-2 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 font-medium"
+                        >
+                          {slipActionLoading === p.id ? "กำลังบันทึก..." : "อนุมัติสลิป"}
+                        </button>
+                        <button
+                          onClick={() => handleRejectSlip(p.id)}
+                          disabled={slipActionLoading === p.id}
+                          className="px-3 py-2 text-xs border border-red-200 text-red-600 rounded-lg hover:bg-red-50 disabled:opacity-50 font-medium"
+                        >
+                          ปฏิเสธ
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {/* Confirm button */}
               {delivery.status !== "delivered" && delivery.status !== "cancelled" && (
@@ -318,6 +485,28 @@ export default function DeliveryScanPage() {
           </div>
         )}
       </div>
+
+      {/* Slip preview modal */}
+      {previewSlip && (
+        <div
+          className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
+          onClick={() => setPreviewSlip(null)}
+        >
+          <div className="relative max-w-3xl w-full" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={() => setPreviewSlip(null)}
+              className="absolute -top-10 right-0 text-white hover:text-gray-300"
+              aria-label="ปิด"
+            >
+              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+            <a href={previewSlip} target="_blank" rel="noopener noreferrer" title="เปิดภาพขนาดเต็ม">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={previewSlip} alt="Slip" className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl mx-auto cursor-zoom-in" />
+            </a>
+          </div>
+        </div>
+      )}
     </>
   );
 }

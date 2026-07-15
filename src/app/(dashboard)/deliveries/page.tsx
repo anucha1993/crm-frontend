@@ -36,6 +36,57 @@ function getComputedStatus(delivery: Delivery): string {
   return dd <= today ? "delivering" : "pending";
 }
 
+type DatePreset = "" | "today" | "yesterday" | "this_week" | "this_month" | "custom";
+
+const DATE_PRESETS: { key: DatePreset; label: string }[] = [
+  { key: "", label: "ทั้งหมด" },
+  { key: "today", label: "วันนี้" },
+  { key: "yesterday", label: "เมื่อวาน" },
+  { key: "this_week", label: "สัปดาห์นี้" },
+  { key: "this_month", label: "เดือนนี้" },
+  { key: "custom", label: "กำหนดเอง" },
+];
+
+const toIsoDate = (d: Date) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
+};
+
+function computeDateRange(preset: DatePreset): { from: string; to: string } {
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const today = toIsoDate(now);
+  switch (preset) {
+    case "today":
+      return { from: today, to: today };
+    case "yesterday": {
+      const y = new Date(now);
+      y.setDate(y.getDate() - 1);
+      const iso = toIsoDate(y);
+      return { from: iso, to: iso };
+    }
+    case "this_week": {
+      // Monday = start of week
+      const day = now.getDay(); // 0=Sun ... 6=Sat
+      const diff = (day + 6) % 7; // days since Monday
+      const start = new Date(now);
+      start.setDate(start.getDate() - diff);
+      const end = new Date(start);
+      end.setDate(start.getDate() + 6);
+      return { from: toIsoDate(start), to: toIsoDate(end) };
+    }
+    case "this_month": {
+      const start = new Date(now.getFullYear(), now.getMonth(), 1);
+      const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      return { from: toIsoDate(start), to: toIsoDate(end) };
+    }
+    default:
+      return { from: "", to: "" };
+  }
+}
+
 export default function DeliveriesPage() {
   const { token } = useAuth();
   const searchParams = useSearchParams();
@@ -43,9 +94,18 @@ export default function DeliveriesPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState(searchParams.get("status") || "");
+  const [datePreset, setDatePreset] = useState<DatePreset>("");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
   const [page, setPage] = useState(1);
   const [lastPage, setLastPage] = useState(1);
   const [total, setTotal] = useState(0);
+
+  const { effFrom, effTo } = (() => {
+    if (datePreset === "custom") return { effFrom: customFrom, effTo: customTo };
+    const r = computeDateRange(datePreset);
+    return { effFrom: r.from, effTo: r.to };
+  })();
 
   const fetchDeliveries = useCallback(async () => {
     if (!token) return;
@@ -53,6 +113,8 @@ export default function DeliveriesPage() {
       const params = new URLSearchParams();
       if (search) params.set("search", search);
       if (filterStatus) params.set("status", filterStatus);
+      if (effFrom) params.set("date_from", effFrom);
+      if (effTo) params.set("date_to", effTo);
       params.set("per_page", "10");
       params.set("page", page.toString());
       const data = await api.get<{ data: Delivery[]; last_page: number; total: number }>(`/deliveries?${params}`, token);
@@ -64,7 +126,7 @@ export default function DeliveriesPage() {
     } finally {
       setLoading(false);
     }
-  }, [token, search, filterStatus, page]);
+  }, [token, search, filterStatus, effFrom, effTo, page]);
 
   useEffect(() => { fetchDeliveries(); }, [fetchDeliveries]);
 
@@ -117,6 +179,53 @@ export default function DeliveriesPage() {
             </svg>
             สแกน QR ยืนยันจัดส่ง
           </button>
+        </div>
+
+        {/* Date range filter */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+          <span className="text-xs text-gray-500 mr-1">วันจัดส่ง:</span>
+          {DATE_PRESETS.map((p) => (
+            <button
+              key={p.key || "all"}
+              onClick={() => {
+                setDatePreset(p.key);
+                if (p.key !== "custom") { setCustomFrom(""); setCustomTo(""); }
+                setPage(1);
+              }}
+              className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${
+                datePreset === p.key
+                  ? "bg-green-600 text-white border-green-600"
+                  : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+          {datePreset === "custom" && (
+            <>
+              <input
+                type="date"
+                value={customFrom}
+                onChange={(e) => { setCustomFrom(e.target.value); setPage(1); }}
+                className="px-2 py-1.5 text-xs bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+              />
+              <span className="text-xs text-gray-400">ถึง</span>
+              <input
+                type="date"
+                value={customTo}
+                onChange={(e) => { setCustomTo(e.target.value); setPage(1); }}
+                className="px-2 py-1.5 text-xs bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+              />
+            </>
+          )}
+          {(effFrom || effTo) && datePreset !== "custom" && (
+            <span className="text-xs text-gray-400 ml-1">
+              ({effFrom === effTo ? effFrom : `${effFrom || "…"} → ${effTo || "…"}`})
+            </span>
+          )}
         </div>
 
         {/* Table */}
