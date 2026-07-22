@@ -58,12 +58,47 @@ const METHOD_MAP: Record<string, string> = {
   pocket_money: "Pocket Money",
 };
 
+interface PendingPayment {
+  id: number;
+  payment_number: string;
+  method: string;
+  amount: string;
+  is_deposit: boolean;
+  status: string;
+  slip_image: string | null;
+  slip_verified: boolean;
+  slip_status_code: string | null;
+  slip_ref: string | null;
+  sender_name: string | null;
+  sender_bank: string | null;
+  transfer_amount: string | null;
+  notes: string | null;
+  creator: { id: number; name: string } | null;
+  created_at: string;
+}
+
+interface PendingByOrder {
+  order: {
+    id: number;
+    order_number: string;
+    status: string;
+    total: number;
+    paid_amount: number;
+    remaining_amount: number;
+    customer: { id: number; name: string; code: string } | null;
+  };
+  pending_payments: PendingPayment[];
+  pending_total: number;
+}
+
 export default function PaymentScanPage() {
   const { token } = useAuth();
   const [manualInput, setManualInput] = useState("");
   const [scanning, setScanning] = useState(false);
   const [loading, setLoading] = useState(false);
   const [payment, setPayment] = useState<PaymentDetail | null>(null);
+  const [orderPending, setOrderPending] = useState<PendingByOrder | null>(null);
+  const [approvingAll, setApprovingAll] = useState(false);
   const [error, setError] = useState("");
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -85,6 +120,7 @@ export default function PaymentScanPage() {
     setLoading(true);
     setError("");
     setPayment(null);
+    setOrderPending(null);
     try {
       // Try searching by payment number
       const data = await api.get<{ data: PaymentDetail[] }>(`/payments?search=${encodeURIComponent(query.trim())}&per_page=1`, token);
@@ -95,12 +131,56 @@ export default function PaymentScanPage() {
       // Load full details
       const detail = await api.get<{ payment: PaymentDetail }>(`/payments/${data.data[0].id}`, token);
       setPayment(detail.payment);
+      // Feature #3: load ALL pending slips for this order (approval at order-issuing step)
+      if (detail.payment.order?.id) {
+        try {
+          const pend = await api.get<PendingByOrder>(`/orders/${detail.payment.order.id}/pending-payments`, token);
+          setOrderPending(pend);
+        } catch { /* ignore */ }
+      }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "เกิดข้อผิดพลาดในการค้นหา");
     } finally {
       setLoading(false);
     }
   }, [token]);
+
+  const refreshOrderPending = useCallback(async () => {
+    if (!token || !payment?.order?.id) return;
+    try {
+      const pend = await api.get<PendingByOrder>(`/orders/${payment.order.id}/pending-payments`, token);
+      setOrderPending(pend);
+    } catch { /* ignore */ }
+  }, [token, payment]);
+
+  const handleApproveAll = async () => {
+    if (!token || !orderPending || orderPending.pending_payments.length === 0) return;
+    if (!confirm(`ต้องการอนุมัติสลิปทั้งหมด ${orderPending.pending_payments.length} รายการ?`)) return;
+    setApprovingAll(true);
+    try {
+      await api.post(`/orders/${orderPending.order.id}/approve-payments`, {}, token);
+      await refreshOrderPending();
+      if (payment) {
+        const detail = await api.get<{ payment: PaymentDetail }>(`/payments/${payment.id}`, token);
+        setPayment(detail.payment);
+      }
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : "เกิดข้อผิดพลาด");
+    } finally {
+      setApprovingAll(false);
+    }
+  };
+
+  const handleRejectPending = async (paymentId: number) => {
+    const reason = prompt("ระบุเหตุผลในการปฏิเสธ:");
+    if (!reason || !token) return;
+    try {
+      await api.post(`/payments/${paymentId}/reject`, { reason }, token);
+      await refreshOrderPending();
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : "เกิดข้อผิดพลาด");
+    }
+  };
 
   const handleApprove = async () => {
     if (!token || !payment || !confirm("ต้องการอนุมัติการชำระเงินนี้?")) return;
@@ -421,10 +501,67 @@ export default function PaymentScanPage() {
               </div>
             )}
 
+            {/* Feature #3: all pending slips awaiting approval for this order */}
+            {orderPending && orderPending.pending_payments.length > 0 && (
+              <div className="bg-white rounded-xl border border-orange-200 p-5">
+                <div className="flex items-center justify-between mb-1">
+                  <h4 className="text-sm font-semibold text-gray-800">สลิปที่รอการอนุมัติ ({orderPending.pending_payments.length} รายการ)</h4>
+                  <span className="text-xs text-orange-600 font-medium">รวม {formatCurrency(orderPending.pending_total)} บาท</span>
+                </div>
+                <p className="text-xs text-gray-400 mb-4">คำสั่งซื้อ {orderPending.order.order_number} · คงเหลือ {formatCurrency(orderPending.order.remaining_amount)} บาท</p>
+
+                <div className="space-y-3">
+                  {orderPending.pending_payments.map((pp) => (
+                    <div key={pp.id} className="flex gap-3 border border-gray-100 rounded-lg p-3">
+                      {pp.slip_image ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={`${apiUrl}/storage/${pp.slip_image}`}
+                          alt="slip"
+                          className="w-20 h-20 object-cover rounded-lg border border-gray-200 flex-shrink-0"
+                        />
+                      ) : (
+                        <div className="w-20 h-20 rounded-lg bg-gray-50 border border-gray-100 flex items-center justify-center text-xs text-gray-300 flex-shrink-0">ไม่มีสลิป</div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-gray-800 text-sm">{pp.payment_number}</span>
+                          {pp.is_deposit && <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-600">มัดจำ</span>}
+                          {pp.slip_verified && <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-50 text-green-700">ยืนยันแล้ว</span>}
+                        </div>
+                        <p className="text-lg font-bold text-gray-800">{formatCurrency(pp.amount)} บาท</p>
+                        <p className="text-xs text-gray-400 truncate">
+                          {METHOD_MAP[pp.method] || pp.method}
+                          {pp.sender_name ? ` · ${pp.sender_name}` : ""}
+                          {pp.slip_ref ? ` · ${pp.slip_ref}` : ""}
+                        </p>
+                        {pp.creator && <p className="text-[11px] text-gray-400">โดย {pp.creator.name}</p>}
+                      </div>
+                      <button
+                        onClick={() => handleRejectPending(pp.id)}
+                        className="self-start text-xs px-2.5 py-1 border border-red-200 text-red-600 rounded-lg hover:bg-red-50"
+                      >
+                        ปฏิเสธ
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Single approve button at the BOTTOM of the slip list */}
+                <button
+                  onClick={handleApproveAll}
+                  disabled={approvingAll}
+                  className="w-full mt-4 px-4 py-3 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium disabled:opacity-50"
+                >
+                  {approvingAll ? "กำลังอนุมัติ..." : `อนุมัติทั้งหมด (${orderPending.pending_payments.length} รายการ)`}
+                </button>
+              </div>
+            )}
+
             {/* Quick action: search another */}
             <div className="text-center">
               <button
-                onClick={() => { setPayment(null); setManualInput(""); setError(""); }}
+                onClick={() => { setPayment(null); setOrderPending(null); setManualInput(""); setError(""); }}
                 className="text-sm text-blue-600 hover:underline"
               >
                 ค้นหารายการอื่น

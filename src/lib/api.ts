@@ -38,7 +38,7 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ message: 'เกิดข้อผิดพลาด' }));
-    throw new ApiError(response.status, error.message || 'เกิดข้อผิดพลาด', error.errors);
+    throw new ApiError(response.status, error.message || 'เกิดข้อผิดพลาด', error.errors, error);
   }
 
   return response.json();
@@ -49,6 +49,7 @@ export class ApiError extends Error {
     public status: number,
     message: string,
     public errors?: Record<string, string[]>,
+    public data?: Record<string, unknown>,
   ) {
     super(message);
   }
@@ -76,7 +77,7 @@ export const api = {
       .then(async (res) => {
         if (!res.ok) {
           const error = await res.json().catch(() => ({ message: 'เกิดข้อผิดพลาด' }));
-          throw new ApiError(res.status, error.message || 'เกิดข้อผิดพลาด', error.errors);
+          throw new ApiError(res.status, error.message || 'เกิดข้อผิดพลาด', error.errors, error);
         }
         return res.json() as Promise<T>;
       });

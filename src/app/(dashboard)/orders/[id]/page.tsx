@@ -218,6 +218,7 @@ export default function OrderDetailPage() {
   const [deliveryNotes, setDeliveryNotes] = useState("");
   const [deliverySaving, setDeliverySaving] = useState(false);
   const [fullyDelivered, setFullyDelivered] = useState(false);
+  const [finalBillWarning, setFinalBillWarning] = useState<null | { covered: number; total: number; remaining: number }>(null);
 
   // Tabs
   const [activeTab, setActiveTab] = useState<"detail" | "payments" | "deliveries" | "invoices">("detail");
@@ -494,6 +495,7 @@ export default function OrderDetailPage() {
       setExcludedDeliveryItems(new Set());
       setDeliveryDate(new Date().toISOString().split("T")[0]);
       setDeliveryNotes("");
+      setFinalBillWarning(null);
       setShowDeliveryForm(true);
     } catch (err) {
       alert(err instanceof ApiError ? err.message : "เกิดข้อผิดพลาด");
@@ -528,10 +530,20 @@ export default function OrderDetailPage() {
       }, token);
 
       setShowDeliveryForm(false);
+      setFinalBillWarning(null);
       fetchOrder();
       fetchTimeline();
     } catch (err) {
-      alert(err instanceof ApiError ? err.message : "เกิดข้อผิดพลาด");
+      // Feature #1: final bill with incomplete slips requires a note before proceeding
+      if (err instanceof ApiError && err.data?.code === "final_bill_note_required") {
+        setFinalBillWarning({
+          covered: Number(err.data.covered_amount ?? 0),
+          total: Number(err.data.total_amount ?? 0),
+          remaining: Number(err.data.remaining_amount ?? 0),
+        });
+      } else {
+        alert(err instanceof ApiError ? err.message : "เกิดข้อผิดพลาด");
+      }
     } finally {
       setDeliverySaving(false);
     }
@@ -1750,12 +1762,25 @@ export default function OrderDetailPage() {
                 })()}
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">หมายเหตุ</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    หมายเหตุ {finalBillWarning && <span className="text-red-600">(จำเป็นต้องระบุ)</span>}
+                  </label>
+                  {finalBillWarning && (
+                    <div className="mb-2 px-3 py-2.5 text-sm bg-red-50 border border-red-200 rounded-lg text-red-700">
+                      <p className="font-medium">⚠ บิลส่งสินค้าสุดท้าย — แนบสลิปไม่ครบ</p>
+                      <p className="text-xs mt-1">
+                        ยอดที่แนบสลิปแล้ว {finalBillWarning.covered.toLocaleString("th-TH", { minimumFractionDigits: 2 })} /
+                        ยอดรวม {finalBillWarning.total.toLocaleString("th-TH", { minimumFractionDigits: 2 })} บาท
+                        (ขาดอีก {finalBillWarning.remaining.toLocaleString("th-TH", { minimumFractionDigits: 2 })} บาท)
+                      </p>
+                      <p className="text-xs mt-1">กรุณาระบุหมายเหตุประกอบก่อนดำเนินการต่อ</p>
+                    </div>
+                  )}
                   <textarea
                     value={deliveryNotes}
                     onChange={(e) => setDeliveryNotes(e.target.value)}
                     rows={2}
-                    className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none text-sm"
+                    className={`w-full px-3 py-2 rounded-lg border focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none text-sm ${finalBillWarning && !deliveryNotes.trim() ? "border-red-300 bg-red-50/30" : "border-gray-300"}`}
                   />
                 </div>
               </div>
@@ -1763,7 +1788,7 @@ export default function OrderDetailPage() {
                 <button onClick={() => setShowDeliveryForm(false)} className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">ยกเลิก</button>
                 <button
                   onClick={handleCreateDelivery}
-                  disabled={deliverySaving || !deliveryDate || Object.values(deliveryQuantities).every(q => !q || Number(q) <= 0)}
+                  disabled={deliverySaving || !deliveryDate || Object.values(deliveryQuantities).every(q => !q || Number(q) <= 0) || (!!finalBillWarning && !deliveryNotes.trim())}
                   className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
                 >
                   {deliverySaving ? "กำลังบันทึก..." : "สร้างใบส่งสินค้า"}

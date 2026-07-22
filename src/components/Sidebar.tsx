@@ -85,6 +85,7 @@ const navItems: NavItem[] = [
       { href: "/payments?status=pending", label: "รอยืนยัน" },
       { href: "/payments?status=approved", label: "อนุมัติแล้ว" },
       { href: "/payments?status=rejected", label: "ปฏิเสธ" },
+      { href: "/slips", label: "คลังสลิป" },
       { href: "/payments/scan", label: "สแกน QR ตรวจสอบ" },
     ],
   },
@@ -98,6 +99,8 @@ const navItems: NavItem[] = [
       </svg>
     ),
     children: [
+      { href: "/deliveries/collection-calendar", label: "ปฏิทินตามเก็บเงิน" },
+      { href: "/deliveries/daily", label: "สรุปยอดชำระรายวัน" },
       { href: "/deliveries/calendar", label: "ปฏิทินการจัดส่ง" },
       { href: "/deliveries", label: "ทั้งหมด" },
       { href: "/deliveries?status=pending", label: "รอจัดส่ง" },
