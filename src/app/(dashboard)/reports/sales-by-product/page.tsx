@@ -38,10 +38,13 @@ export default function SalesByProductPage() {
 
   const fmt = (v: string | number) => Number(v).toLocaleString("th-TH", { minimumFractionDigits: 2 });
 
+  // Laravel may return numeric columns as strings; coerce to Number before math
+  // (otherwise `s + p.total_qty` does string concatenation and prints
+  // "03273.003898.001711.00..." instead of a real sum).
   const sorted = [...products].sort((a, b) => Number(b[sortBy]) - Number(a[sortBy]));
   const grandAmount = products.reduce((s, p) => s + Number(p.total_amount), 0);
-  const grandQty = products.reduce((s, p) => s + p.total_qty, 0);
-  const grandOrders = products.reduce((s, p) => s + p.order_count, 0);
+  const grandQty = products.reduce((s, p) => s + Number(p.total_qty), 0);
+  const grandOrders = products.reduce((s, p) => s + Number(p.order_count), 0);
 
   return (
     <>
@@ -124,7 +127,7 @@ export default function SalesByProductPage() {
                           <div className="h-full bg-green-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
                         </div>
                         <span className="text-sm font-medium text-gray-700 w-28 text-right">฿{fmt(p.total_amount)}</span>
-                        <span className="text-xs text-gray-400 w-16 text-right">{p.total_qty} {p.unit}</span>
+                        <span className="text-xs text-gray-400 w-16 text-right">{Number(p.total_qty).toLocaleString("th-TH")} {p.unit}</span>
                       </div>
                     );
                   })}
@@ -154,7 +157,7 @@ export default function SalesByProductPage() {
                       <td className="px-4 py-2.5 text-gray-500">{p.product_code}</td>
                       <td className="px-4 py-2.5 font-medium text-gray-800">{p.product_name}</td>
                       <td className="px-4 py-2.5 text-gray-500">{p.category_name || "-"}</td>
-                      <td className="px-4 py-2.5 text-right">{p.total_qty.toLocaleString("th-TH")} {p.unit}</td>
+                      <td className="px-4 py-2.5 text-right">{Number(p.total_qty).toLocaleString("th-TH")} {p.unit}</td>
                       <td className="px-4 py-2.5 text-right font-medium text-green-700">฿{fmt(p.total_amount)}</td>
                       <td className="px-4 py-2.5 text-right">{p.order_count}</td>
                       <td className="px-4 py-2.5 text-right text-gray-500">{grandAmount > 0 ? ((Number(p.total_amount) / grandAmount) * 100).toFixed(1) : 0}%</td>

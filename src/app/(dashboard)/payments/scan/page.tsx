@@ -98,6 +98,9 @@ export default function PaymentScanPage() {
   const [loading, setLoading] = useState(false);
   const [payment, setPayment] = useState<PaymentDetail | null>(null);
   const [orderPending, setOrderPending] = useState<PendingByOrder | null>(null);
+  // IDs of pending payments the user has ticked for approval. When ALL rows are
+  // ticked, we approve the whole order in one call (no payment_ids body).
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [approvingAll, setApprovingAll] = useState(false);
   const [error, setError] = useState("");
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -136,6 +139,7 @@ export default function PaymentScanPage() {
         try {
           const pend = await api.get<PendingByOrder>(`/orders/${detail.payment.order.id}/pending-payments`, token);
           setOrderPending(pend);
+          setSelectedIds(new Set(pend.pending_payments.map((p) => p.id)));
         } catch { /* ignore */ }
       }
     } catch (err) {
@@ -150,15 +154,24 @@ export default function PaymentScanPage() {
     try {
       const pend = await api.get<PendingByOrder>(`/orders/${payment.order.id}/pending-payments`, token);
       setOrderPending(pend);
+      setSelectedIds(new Set(pend.pending_payments.map((p) => p.id)));
     } catch { /* ignore */ }
   }, [token, payment]);
 
   const handleApproveAll = async () => {
     if (!token || !orderPending || orderPending.pending_payments.length === 0) return;
-    if (!confirm(`ต้องการอนุมัติสลิปทั้งหมด ${orderPending.pending_payments.length} รายการ?`)) return;
+    const total = orderPending.pending_payments.length;
+    const selectedCount = orderPending.pending_payments.filter((p) => selectedIds.has(p.id)).length;
+    if (selectedCount === 0) { alert("กรุณาเลือกสลิปที่ต้องการอนุมัติอย่างน้อย 1 รายการ"); return; }
+    const isAll = selectedCount === total;
+    const msg = isAll
+      ? `ต้องการอนุมัติสลิปทั้งหมด ${total} รายการ?`
+      : `ต้องการอนุมัติสลิปที่เลือก ${selectedCount} จาก ${total} รายการ?`;
+    if (!confirm(msg)) return;
     setApprovingAll(true);
     try {
-      await api.post(`/orders/${orderPending.order.id}/approve-payments`, {}, token);
+      const body: { payment_ids?: number[] } = isAll ? {} : { payment_ids: Array.from(selectedIds) };
+      await api.post(`/orders/${orderPending.order.id}/approve-payments`, body, token);
       await refreshOrderPending();
       if (payment) {
         const detail = await api.get<{ payment: PaymentDetail }>(`/payments/${payment.id}`, token);
@@ -169,6 +182,20 @@ export default function PaymentScanPage() {
     } finally {
       setApprovingAll(false);
     }
+  };
+
+  const toggleSelect = (id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (!orderPending) return;
+    const all = orderPending.pending_payments.map((p) => p.id);
+    setSelectedIds((prev) => (prev.size === all.length ? new Set() : new Set(all)));
   };
 
   const handleRejectPending = async (paymentId: number) => {
@@ -416,8 +443,9 @@ export default function PaymentScanPage() {
                 </div>
               )}
 
-              {/* Action buttons */}
-              {payment.status === "pending" && (
+              {/* Action buttons — hidden when the aggregated "สลิปที่รอการอนุมัติ" list below
+                  covers this payment (avoids duplicate approve buttons). */}
+              {payment.status === "pending" && !(orderPending && orderPending.pending_payments.some((p) => p.id === payment.id)) && (
                 <div className="mt-4 flex gap-2">
                   <button onClick={handleApprove} className="flex-1 px-4 py-2.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium">
                     อนุมัติการชำระเงิน
@@ -508,11 +536,43 @@ export default function PaymentScanPage() {
                   <h4 className="text-sm font-semibold text-gray-800">สลิปที่รอการอนุมัติ ({orderPending.pending_payments.length} รายการ)</h4>
                   <span className="text-xs text-orange-600 font-medium">รวม {formatCurrency(orderPending.pending_total)} บาท</span>
                 </div>
-                <p className="text-xs text-gray-400 mb-4">คำสั่งซื้อ {orderPending.order.order_number} · คงเหลือ {formatCurrency(orderPending.order.remaining_amount)} บาท</p>
+                <p className="text-xs text-gray-400 mb-3">คำสั่งซื้อ {orderPending.order.order_number} · คงเหลือ {formatCurrency(orderPending.order.remaining_amount)} บาท</p>
+
+                {/* Master select */}
+                <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border border-gray-100 rounded-lg mb-3">
+                  <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.size === orderPending.pending_payments.length}
+                      onChange={toggleSelectAll}
+                      className="w-4 h-4 accent-green-600"
+                    />
+                    เลือกทั้งหมด
+                  </label>
+                  <span className="text-xs text-gray-500">
+                    เลือก <b className="text-gray-800">{orderPending.pending_payments.filter(p => selectedIds.has(p.id)).length}</b> / {orderPending.pending_payments.length} รายการ ·
+                    ยอดที่เลือก <b className="text-gray-800">
+                      {formatCurrency(orderPending.pending_payments.filter(p => selectedIds.has(p.id)).reduce((s, p) => s + Number(p.amount), 0))}
+                    </b> บาท
+                  </span>
+                </div>
 
                 <div className="space-y-3">
-                  {orderPending.pending_payments.map((pp) => (
-                    <div key={pp.id} className="flex gap-3 border border-gray-100 rounded-lg p-3">
+                  {orderPending.pending_payments.map((pp) => {
+                    const isSelected = selectedIds.has(pp.id);
+                    return (
+                    <div
+                      key={pp.id}
+                      className={`flex gap-3 rounded-lg p-3 border transition-colors ${isSelected ? "border-green-300 bg-green-50/40" : "border-gray-100 bg-white"}`}
+                    >
+                      <label className="flex-shrink-0 flex items-start pt-1 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSelect(pp.id)}
+                          className="w-4 h-4 accent-green-600"
+                        />
+                      </label>
                       {pp.slip_image ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
@@ -544,17 +604,31 @@ export default function PaymentScanPage() {
                         ปฏิเสธ
                       </button>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
 
-                {/* Single approve button at the BOTTOM of the slip list */}
-                <button
-                  onClick={handleApproveAll}
-                  disabled={approvingAll}
-                  className="w-full mt-4 px-4 py-3 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium disabled:opacity-50"
-                >
-                  {approvingAll ? "กำลังอนุมัติ..." : `อนุมัติทั้งหมด (${orderPending.pending_payments.length} รายการ)`}
-                </button>
+                {/* Single approve button ALWAYS at the BOTTOM of the slip list */}
+                {(() => {
+                  const selCount = orderPending.pending_payments.filter(p => selectedIds.has(p.id)).length;
+                  const total = orderPending.pending_payments.length;
+                  const isAll = selCount === total;
+                  return (
+                    <button
+                      onClick={handleApproveAll}
+                      disabled={approvingAll || selCount === 0}
+                      className="w-full mt-4 px-4 py-3 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium disabled:opacity-50"
+                    >
+                      {approvingAll
+                        ? "กำลังอนุมัติ..."
+                        : selCount === 0
+                          ? "เลือกสลิปเพื่ออนุมัติ"
+                          : isAll
+                            ? `อนุมัติทั้งหมด (${total} รายการ)`
+                            : `อนุมัติที่เลือก (${selCount} / ${total} รายการ)`}
+                    </button>
+                  );
+                })()}
               </div>
             )}
 

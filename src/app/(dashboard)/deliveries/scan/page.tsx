@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import Link from "next/link";
+import { useSearchParams, useRouter } from "next/navigation";
 import Header from "@/components/Header";
 import { useAuth } from "@/lib/auth-context";
 import { api, ApiError } from "@/lib/api";
@@ -64,8 +66,43 @@ function getComputedStatus(d: DeliveryLookup): string {
   return dd <= today ? "delivering" : "pending";
 }
 
+// Daily-summary types (formerly at /deliveries/daily)
+interface DailyDelivery {
+  id: number;
+  delivery_number: string;
+  status: string;
+  delivery_date: string | null;
+  order_id: number | null;
+  order_number: string | null;
+  customer_name: string | null;
+  delivery_total: number;
+  order_total: number;
+  order_paid: number;
+  order_remaining: number;
+  payment_status: "paid" | "unpaid";
+  creator: { id: number; name: string } | null;
+}
+interface DailySummary {
+  date: string;
+  deliveries: DailyDelivery[];
+  summary: {
+    delivery_count: number;
+    total_to_collect: number;
+    total_paid: number;
+    total_unpaid: number;
+  };
+}
+
 export default function DeliveryScanPage() {
-  const { token } = useAuth();
+  const { token, hasRole } = useAuth();
+  const searchParams = useSearchParams();
+  const router = useRouter();
+
+  // Tabs: default to "scan"; switch to "daily" when ?view=daily or ?date=... is present.
+  const initialView: "scan" | "daily" =
+    searchParams.get("view") === "daily" || searchParams.get("date") ? "daily" : "scan";
+  const [view, setView] = useState<"scan" | "daily">(initialView);
+
   const [delivery, setDelivery] = useState<DeliveryLookup | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -75,6 +112,16 @@ export default function DeliveryScanPage() {
   const [confirmed, setConfirmed] = useState(false);
   const [previewSlip, setPreviewSlip] = useState<string | null>(null);
   const [slipActionLoading, setSlipActionLoading] = useState<number | null>(null);
+
+  // Daily-summary state
+  const [dailyDate, setDailyDate] = useState<string>(
+    searchParams.get("date") || new Date().toISOString().split("T")[0]
+  );
+  const [dailyData, setDailyData] = useState<DailySummary | null>(null);
+  const [dailyLoading, setDailyLoading] = useState(false);
+
+  // Sales-only users must NOT see grand totals / cumulative order amounts.
+  const isSalesOnly = hasRole("sales") && !hasRole("admin") && !hasRole("manager");
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/api$/, "") || "http://localhost:7000";
 
@@ -158,6 +205,33 @@ export default function DeliveryScanPage() {
     return () => stopScanning();
   }, []);
 
+  // Daily summary fetch
+  const fetchDaily = useCallback(async () => {
+    if (!token) return;
+    setDailyLoading(true);
+    try {
+      const res = await api.get<DailySummary>(`/deliveries/daily-summary?date=${dailyDate}`, token);
+      setDailyData(res);
+    } catch {
+      setDailyData(null);
+    } finally {
+      setDailyLoading(false);
+    }
+  }, [token, dailyDate]);
+
+  useEffect(() => {
+    if (view === "daily") fetchDaily();
+  }, [view, fetchDaily]);
+
+  const shiftDay = (delta: number) => {
+    const d = new Date(dailyDate);
+    d.setDate(d.getDate() + delta);
+    setDailyDate(d.toISOString().split("T")[0]);
+  };
+
+  const fmt = (v: number | string) =>
+    Number(v).toLocaleString("th-TH", { minimumFractionDigits: 2 });
+
   const handleConfirm = async () => {
     if (!token || !delivery) return;
     setConfirmLoading(true);
@@ -217,8 +291,29 @@ export default function DeliveryScanPage() {
 
   return (
     <>
-      <Header title="สแกน QR ยืนยันจัดส่ง" />
+      <Header title="สแกน QR / สรุปยอดชำระรายวัน" />
       <div className="p-6 max-w-5xl mx-auto space-y-6">
+        {/* Tabs */}
+        <div className="flex gap-1 border-b border-gray-200">
+          <button
+            onClick={() => { setView("scan"); router.replace("/deliveries/scan"); }}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              view === "scan" ? "border-green-500 text-green-700" : "border-transparent text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            สแกน QR ยืนยันจัดส่ง
+          </button>
+          <button
+            onClick={() => { setView("daily"); router.replace(`/deliveries/scan?view=daily&date=${dailyDate}`); }}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              view === "daily" ? "border-green-500 text-green-700" : "border-transparent text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            สรุปยอดชำระรายวัน
+          </button>
+        </div>
+
+        {view === "scan" && (<>
         {/* Scanner */}
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
@@ -483,6 +578,113 @@ export default function DeliveryScanPage() {
               )}
             </div>
           </div>
+        )}
+        </>)}
+
+        {view === "daily" && (
+          <>
+            {/* Date picker */}
+            <div className="bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-2">
+              <button onClick={() => shiftDay(-1)} className="px-3 py-2 text-sm rounded-lg border border-gray-200 hover:bg-gray-50">‹ ก่อนหน้า</button>
+              <input
+                type="date"
+                value={dailyDate}
+                onChange={(e) => setDailyDate(e.target.value)}
+                className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none"
+              />
+              <button onClick={() => shiftDay(1)} className="px-3 py-2 text-sm rounded-lg border border-gray-200 hover:bg-gray-50">ถัดไป ›</button>
+              <button onClick={() => setDailyDate(new Date().toISOString().split("T")[0])} className="ml-auto px-3 py-2 text-sm rounded-lg bg-green-100 text-green-700 hover:bg-green-200">วันนี้</button>
+            </div>
+
+            {/* Summary cards — grand totals hidden for sales-only role */}
+            {dailyData && (
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-white rounded-xl border border-gray-200 p-5">
+                  <p className="text-xs text-gray-500 mb-1">จำนวนบิลจัดส่ง</p>
+                  <p className="text-2xl font-bold text-gray-800">{dailyData.summary.delivery_count}</p>
+                </div>
+                {!isSalesOnly && (
+                  <>
+                    <div className="bg-white rounded-xl border border-gray-200 p-5">
+                      <p className="text-xs text-gray-500 mb-1">ยอดที่ต้องเรียกเก็บ</p>
+                      <p className="text-2xl font-bold text-gray-800">{fmt(dailyData.summary.total_to_collect)}</p>
+                    </div>
+                    <div className="bg-white rounded-xl border border-gray-200 p-5">
+                      <p className="text-xs text-gray-500 mb-1">ชำระแล้ว</p>
+                      <p className="text-2xl font-bold text-green-600">{fmt(dailyData.summary.total_paid)}</p>
+                    </div>
+                    <div className="bg-white rounded-xl border border-gray-200 p-5">
+                      <p className="text-xs text-gray-500 mb-1">ค้างชำระ</p>
+                      <p className="text-2xl font-bold text-red-600">{fmt(dailyData.summary.total_unpaid)}</p>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* Bills table */}
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <div className="px-5 py-4 border-b border-gray-100">
+                <h3 className="font-semibold text-gray-800">รายละเอียดบิลย่อยที่จัดส่งวันนี้</h3>
+              </div>
+              {dailyLoading ? (
+                <div className="p-8 text-center text-gray-400">กำลังโหลด...</div>
+              ) : !dailyData || dailyData.deliveries.length === 0 ? (
+                <div className="p-8 text-center text-gray-400">ไม่มีการจัดส่งในวันที่เลือก</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-gray-50 border-b border-gray-100 text-gray-500">
+                        <th className="text-left px-4 py-3 font-medium">เลขที่บิลย่อย</th>
+                        <th className="text-left px-4 py-3 font-medium">คำสั่งซื้อ / ลูกค้า</th>
+                        <th className="text-right px-4 py-3 font-medium">ยอดต้องเก็บ (บิลนี้)</th>
+                        {!isSalesOnly && (
+                          <>
+                            <th className="text-right px-4 py-3 font-medium">ชำระแล้ว (ทั้งคำสั่งซื้อ)</th>
+                            <th className="text-right px-4 py-3 font-medium">คงเหลือ</th>
+                          </>
+                        )}
+                        <th className="text-center px-4 py-3 font-medium">สถานะชำระ</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {dailyData.deliveries.map((d) => (
+                        <tr key={d.id} className="hover:bg-gray-50">
+                          <td className="px-4 py-3">
+                            <Link href={`/deliveries/${d.id}`} className="font-mono font-medium text-blue-600 hover:underline">{d.delivery_number}</Link>
+                            <div className="mt-1">
+                              <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${(STATUS_MAP[d.status] || STATUS_MAP.pending).color}`}>{(STATUS_MAP[d.status] || STATUS_MAP.pending).label}</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            {d.order_id ? (
+                              <Link href={`/orders/${d.order_id}`} className="font-mono text-blue-600 hover:underline">{d.order_number}</Link>
+                            ) : <span className="text-gray-400">-</span>}
+                            <p className="text-gray-600">{d.customer_name || "-"}</p>
+                          </td>
+                          <td className="px-4 py-3 text-right font-semibold text-gray-800">{fmt(d.delivery_total)}</td>
+                          {!isSalesOnly && (
+                            <>
+                              <td className="px-4 py-3 text-right text-green-600">{fmt(d.order_paid)}</td>
+                              <td className="px-4 py-3 text-right font-medium text-red-600">{fmt(d.order_remaining)}</td>
+                            </>
+                          )}
+                          <td className="px-4 py-3 text-center">
+                            {d.payment_status === "paid" ? (
+                              <span className="inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700">ชำระเงินแล้ว</span>
+                            ) : (
+                              <span className="inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-600">ยังไม่ชำระเงิน</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </>
         )}
       </div>
 

@@ -99,14 +99,12 @@ const navItems: NavItem[] = [
       </svg>
     ),
     children: [
-      { href: "/deliveries/collection-calendar", label: "ปฏิทินตามเก็บเงิน" },
-      { href: "/deliveries/daily", label: "สรุปยอดชำระรายวัน" },
-      { href: "/deliveries/calendar", label: "ปฏิทินการจัดส่ง" },
+      { href: "/deliveries/status-calendar", label: "ปฏิทิน (จัดส่ง & ตามเก็บเงิน)" },
+      { href: "/deliveries/scan", label: "สแกน QR / สรุปยอดชำระรายวัน" },
       { href: "/deliveries", label: "ทั้งหมด" },
       { href: "/deliveries?status=pending", label: "รอจัดส่ง" },
       { href: "/deliveries?status=delivering", label: "กำลังจัดส่ง" },
       { href: "/deliveries?status=delivered", label: "จัดส่งแล้ว" },
-      { href: "/deliveries/scan", label: "สแกน QR ยืนยันจัดส่ง" },
     ],
   },
   {
@@ -308,10 +306,14 @@ export default function Sidebar() {
                       let isChildActive: boolean;
                       if (childQuery) {
                         isChildActive = currentUrl === child.href;
+                      } else if (child.href === item.href) {
+                        // The "ทั้งหมด" root link — active only on the exact section root,
+                        // not on any nested sub-page.
+                        isChildActive = pathname === childPath && !searchParams.toString();
                       } else if (child.href === item.children![0].href) {
                         isChildActive = pathname === childPath || pathname.startsWith(childPath + '/');
                       } else {
-                        isChildActive = pathname.startsWith(childPath);
+                        isChildActive = pathname === childPath || pathname.startsWith(childPath + '/');
                       }
                       return (
                         <Link
