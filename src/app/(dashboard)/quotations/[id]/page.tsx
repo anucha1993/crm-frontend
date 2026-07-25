@@ -25,7 +25,7 @@ const STATUS_MAP: Record<string, { label: string; color: string }> = {
 const emptyItem: QuotationItem = { product_id: null, description: "", thickness: null, length: null, quantity: 1, unit: "ชิ้น", unit_price: 0, amount: 0 };
 
 export default function QuotationFormPage() {
-  const { token, user, accountType } = useAuth();
+  const { token, user, accountType, availableAccounts, setAccountType } = useAuth();
   const isCash = accountType === 'cash';
   const router = useRouter();
   const params = useParams();
@@ -71,6 +71,21 @@ export default function QuotationFormPage() {
   const [loading, setLoading] = useState(!!isEdit);
   const [saveWarnings, setSaveWarnings] = useState<{ type: string; message: string }[]>([]);
   const [linkedOrder, setLinkedOrder] = useState<{ id: number; order_number: string } | null>(null);
+
+  // Convert-account (cash <-> tax) state
+  const [showConvertModal, setShowConvertModal] = useState(false);
+  const [converting, setConverting] = useState(false);
+  const [convertResult, setConvertResult] = useState<null | {
+    from: string; to: string;
+    order_id: number | null; order_number: string | null;
+    deliveries: number; invoices: number;
+    invoices_recomputed: number; invoices_issued_kept: number;
+    payments: number;
+    slips_converted: number; slips_skipped: number;
+    vat_rate_from: number; vat_rate_to: number;
+    quotation_total_from: number; quotation_total_to: number;
+    order_total_from: number; order_total_to: number;
+  }>(null);
 
   const inputClass = "w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none text-sm";
   const labelClass = "block text-sm font-medium text-gray-700 mb-1";
@@ -301,6 +316,36 @@ export default function QuotationFormPage() {
       alert(err instanceof ApiError ? (err.errors ? Object.values(err.errors).flat().join(", ") : err.message) : "เกิดข้อผิดพลาด");
     } finally {
       setSavingShipping(false);
+    }
+  };
+
+  // Convert quotation account mode (cash <-> tax) with cascade to order/deliveries/invoices/payments/slips
+  const handleConvertAccount = async () => {
+    if (!token || !isEdit || !accountType) return;
+    const target = accountType === 'cash' ? 'tax' : 'cash';
+    setConverting(true);
+    try {
+      const res = await api.post<{
+        summary: {
+          from: string; to: string;
+          order_id: number | null; order_number: string | null;
+          deliveries: number; invoices: number;
+          invoices_recomputed: number; invoices_issued_kept: number;
+          payments: number;
+          slips_converted: number; slips_skipped: number;
+          vat_rate_from: number; vat_rate_to: number;
+          quotation_total_from: number; quotation_total_to: number;
+          order_total_from: number; order_total_to: number;
+        };
+      }>(`/quotations/${quotationId}/convert-account`, { target_account_type: target }, token);
+      setConvertResult(res.summary);
+      // Switch the active account context so subsequent requests still find the doc.
+      setAccountType(target);
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : "แปลงโหมดบัญชีไม่สำเร็จ");
+      setShowConvertModal(false);
+    } finally {
+      setConverting(false);
     }
   };
 
@@ -737,6 +782,16 @@ export default function QuotationFormPage() {
                 PDF
               </button>
             )}
+            {isEdit && accountType && availableAccounts.includes(isCash ? 'tax' : 'cash') && (
+              <button
+                onClick={() => { setConvertResult(null); setShowConvertModal(true); }}
+                className="px-5 py-2.5 text-sm border border-indigo-300 text-indigo-700 rounded-lg hover:bg-indigo-50 font-medium transition-colors flex items-center gap-2"
+                title={`แปลงใบเสนอราคานี้ (พร้อมคำสั่งซื้อ / ใบส่งของ / ใบกำกับภาษี / การชำระเงินที่เกี่ยวข้อง) ไปเป็นโหมด${isCash ? 'ใบกำกับภาษี' : 'บิลเงินสด'}`}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
+                แปลงเป็น{isCash ? 'ใบกำกับภาษี' : 'บิลเงินสด'}
+              </button>
+            )}
             <button onClick={handleSave} disabled={saving || !!linkedOrder} title={linkedOrder ? "ใบเสนอราคาถูกล็อก เนื่องจากมีคำสั่งซื้อแล้ว" : ""} className="px-6 py-2.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed font-medium transition-colors">
               {saving ? "กำลังบันทึก..." : isEdit ? "บันทึกการแก้ไข" : "สร้างใบเสนอราคา"}
             </button>
@@ -902,6 +957,105 @@ export default function QuotationFormPage() {
                 รับทราบ
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Convert-account Modal */}
+      {showConvertModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
+            {!convertResult ? (
+              <>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center">
+                    <svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-800">แปลงโหมดบัญชี</h3>
+                    <p className="text-sm text-gray-500">
+                      {isCash ? 'บิลเงินสด' : 'ใบกำกับภาษี'} → <b className="text-indigo-700">{isCash ? 'ใบกำกับภาษี' : 'บิลเงินสด'}</b>
+                    </p>
+                  </div>
+                </div>
+                <div className="text-sm text-gray-600 space-y-2 mb-5">
+                  <p>ระบบจะแปลงเอกสารดังต่อไปนี้ทั้งหมดไปยังโหมดใหม่:</p>
+                  <ul className="list-disc pl-6 space-y-0.5 text-gray-700">
+                    <li>ใบเสนอราคา <span className="font-mono">{quotationNumber}</span></li>
+                    {linkedOrder && <li>คำสั่งซื้อ <span className="font-mono">{linkedOrder.order_number}</span></li>}
+                    <li>ใบส่งของ / ใบกำกับภาษี / รายการชำระเงิน ทั้งหมดที่เกี่ยวข้อง</li>
+                    <li>สลิปที่ผูกกับเอกสารนี้ (เฉพาะที่ไม่ได้ใช้ร่วมกับคำสั่งซื้ออื่น)</li>
+                  </ul>
+                  <div className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-lg p-2 mt-2">
+                    <b>การปรับ VAT อัตโนมัติ:</b>{' '}
+                    {isCash
+                      ? 'จาก 0% (เงินสด) → 7% (ใบกำกับภาษี) — ระบบจะเพิ่ม VAT บนใบเสนอราคา / คำสั่งซื้อ / ใบกำกับภาษี (ยกเว้นที่ออกไปแล้ว)'
+                      : 'จาก ' + Number(vatRate).toFixed(0) + '% (ใบกำกับภาษี) → 0% (บิลเงินสด) — ระบบจะเอา VAT ออก'}
+                  </div>
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">
+                    หลังแปลงเสร็จ ระบบจะสลับบริบทบัญชีปัจจุบันเป็น <b>{isCash ? 'ใบกำกับภาษี' : 'บิลเงินสด'}</b> โดยอัตโนมัติ. <br />
+                    ใบกำกับภาษีที่ <b>ออกไปแล้ว (issued)</b> จะไม่ถูกแก้ไขยอด (คงยอดเดิมเพื่อรักษาความถูกต้องตามกฎหมาย)
+                  </p>
+                </div>
+                <div className="flex justify-end gap-3">
+                  <button onClick={() => setShowConvertModal(false)} disabled={converting} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50">ยกเลิก</button>
+                  <button onClick={handleConvertAccount} disabled={converting} className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:bg-gray-300 transition-colors font-medium">
+                    {converting ? 'กำลังแปลง...' : 'ยืนยันการแปลง'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+                    <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-800">แปลงสำเร็จ</h3>
+                    <p className="text-sm text-gray-500">
+                      {convertResult.from === 'cash' ? 'บิลเงินสด' : 'ใบกำกับภาษี'} → <b className="text-green-700">{convertResult.to === 'cash' ? 'บิลเงินสด' : 'ใบกำกับภาษี'}</b>
+                    </p>
+                  </div>
+                </div>
+                <div className="text-sm text-gray-700 space-y-1 mb-5 bg-gray-50 rounded-lg p-3 border border-gray-200">
+                  <div className="flex justify-between"><span className="text-gray-500">ใบเสนอราคา</span><span className="font-mono">{quotationNumber}</span></div>
+                  {convertResult.order_number && (
+                    <div className="flex justify-between"><span className="text-gray-500">คำสั่งซื้อ</span><span className="font-mono">{convertResult.order_number}</span></div>
+                  )}
+                  <div className="flex justify-between"><span className="text-gray-500">VAT</span>
+                    <span>{Number(convertResult.vat_rate_from).toFixed(0)}% → <b className="text-indigo-700">{Number(convertResult.vat_rate_to).toFixed(0)}%</b></span>
+                  </div>
+                  <div className="flex justify-between"><span className="text-gray-500">ยอดใบเสนอราคา</span>
+                    <span>{Number(convertResult.quotation_total_from).toLocaleString('th-TH', { minimumFractionDigits: 2 })} → <b className="text-indigo-700">{Number(convertResult.quotation_total_to).toLocaleString('th-TH', { minimumFractionDigits: 2 })}</b></span>
+                  </div>
+                  {convertResult.order_number && (
+                    <div className="flex justify-between"><span className="text-gray-500">ยอดคำสั่งซื้อ</span>
+                      <span>{Number(convertResult.order_total_from).toLocaleString('th-TH', { minimumFractionDigits: 2 })} → <b className="text-indigo-700">{Number(convertResult.order_total_to).toLocaleString('th-TH', { minimumFractionDigits: 2 })}</b></span>
+                    </div>
+                  )}
+                  <div className="flex justify-between"><span className="text-gray-500">ใบส่งของ</span><span>{convertResult.deliveries} ใบ</span></div>
+                  <div className="flex justify-between"><span className="text-gray-500">ใบกำกับภาษี</span><span>{convertResult.invoices} ใบ (คำนวณใหม่ {convertResult.invoices_recomputed}, คงยอด {convertResult.invoices_issued_kept})</span></div>
+                  <div className="flex justify-between"><span className="text-gray-500">รายการชำระเงิน</span><span>{convertResult.payments} รายการ</span></div>
+                  <div className="flex justify-between"><span className="text-gray-500">สลิปที่แปลง</span><span>{convertResult.slips_converted} ใบ</span></div>
+                  {convertResult.slips_skipped > 0 && (
+                    <div className="flex justify-between text-amber-700"><span>สลิปที่ข้าม (ใช้ร่วมกับคำสั่งซื้ออื่น)</span><span>{convertResult.slips_skipped} ใบ</span></div>
+                  )}
+                </div>
+                {convertResult.invoices_issued_kept > 0 && (
+                  <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2 mb-3">
+                    ⚠ มีใบกำกับภาษีที่ออกแล้ว {convertResult.invoices_issued_kept} ใบ ระบบไม่แก้ไขยอดของใบเหล่านี้ (คงยอดเดิม) — หากต้องการปรับ กรุณายกเลิกและออกใหม่ในโหมดใหม่
+                  </div>
+                )}
+                <div className="flex justify-end">
+                  <button
+                    onClick={() => { setShowConvertModal(false); router.refresh(); router.push(`/quotations/${quotationId}`); }}
+                    className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
+                  >
+                    รับทราบ
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

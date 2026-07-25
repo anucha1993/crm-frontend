@@ -8,13 +8,25 @@ import { api } from "@/lib/api";
 interface Delivery {
   id: number;
   delivery_number: string;
-  order: { id: number; order_number: string } | null;
+  order: { id: number; order_number: string; total?: string; paid_amount?: string; remaining_amount?: string } | null;
   customer: { id: number; name: string } | null;
   status: string;
   delivery_date: string;
   delivered_at: string | null;
   total_weight: string;
   suggested_vehicle: string | null;
+}
+
+interface DayAgg {
+  delivery_count: number;
+  to_collect: number;
+  paid: number;
+  unpaid: number;
+}
+
+interface CalendarData {
+  month: string;
+  days: Record<string, DayAgg>;
 }
 
 const STATUS_MAP: Record<string, { label: string; color: string; bg: string; dot: string }> = {
@@ -33,6 +45,11 @@ function getComputedStatus(delivery: Delivery): string {
   return dd <= today ? "delivering" : "pending";
 }
 
+function isPaid(d: Delivery): boolean {
+  const remaining = Number(d.order?.remaining_amount ?? 0);
+  return remaining <= 0.01;
+}
+
 const DAYS_TH = ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."];
 const MONTHS_TH = [
   "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
@@ -40,35 +57,46 @@ const MONTHS_TH = [
 ];
 
 export default function DeliveryCalendarPage() {
-  const { token } = useAuth();
+  const { token, hasRole } = useAuth();
+  // Sales-only users must NOT see grand totals or per-day amount aggregates.
+  const isSalesOnly = hasRole("sales") && !hasRole("admin") && !hasRole("manager");
+
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
+  const [calData, setCalData] = useState<CalendarData | null>(null);
   const [loading, setLoading] = useState(true);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
+  const monthStr = `${year}-${String(month + 1).padStart(2, "0")}`;
 
-  const fetchDeliveries = useCallback(async () => {
+  const fetchAll = useCallback(async () => {
     if (!token) return;
     setLoading(true);
     try {
       const startDate = new Date(year, month, 1);
       const endDate = new Date(year, month + 1, 0);
       const params = new URLSearchParams();
-      params.set("per_page", "200");
+      params.set("per_page", "500");
       params.set("date_from", startDate.toISOString().split("T")[0]);
       params.set("date_to", endDate.toISOString().split("T")[0]);
-      const data = await api.get<{ data: Delivery[] }>(`/deliveries?${params}`, token);
-      setDeliveries(data.data);
+      const [list, agg] = await Promise.all([
+        api.get<{ data: Delivery[] }>(`/deliveries?${params}`, token),
+        api.get<CalendarData>(`/deliveries/calendar?month=${monthStr}`, token),
+      ]);
+      setDeliveries(list.data);
+      setCalData(agg);
     } catch {
       // silent
     } finally {
       setLoading(false);
     }
-  }, [token, year, month]);
+  }, [token, year, month, monthStr]);
 
-  useEffect(() => { fetchDeliveries(); }, [fetchDeliveries]);
+  useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  const fmt = (v: number) => Number(v).toLocaleString("th-TH", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 
   // Build calendar grid
   const firstDayOfMonth = new Date(year, month, 1).getDay();
@@ -76,28 +104,21 @@ export default function DeliveryCalendarPage() {
   const prevMonthDays = new Date(year, month, 0).getDate();
 
   const calendarDays: { day: number; month: "prev" | "current" | "next"; dateStr: string }[] = [];
-
-  // Previous month fill
   for (let i = firstDayOfMonth - 1; i >= 0; i--) {
     const d = prevMonthDays - i;
     const dt = new Date(year, month - 1, d);
     calendarDays.push({ day: d, month: "prev", dateStr: dt.toISOString().split("T")[0] });
   }
-
-  // Current month
   for (let d = 1; d <= daysInMonth; d++) {
     const dt = new Date(year, month, d);
     calendarDays.push({ day: d, month: "current", dateStr: dt.toISOString().split("T")[0] });
   }
-
-  // Next month fill
   const remaining = 42 - calendarDays.length;
   for (let d = 1; d <= remaining; d++) {
     const dt = new Date(year, month + 1, d);
     calendarDays.push({ day: d, month: "next", dateStr: dt.toISOString().split("T")[0] });
   }
 
-  // Group deliveries by date
   const deliveriesByDate: Record<string, Delivery[]> = {};
   deliveries.forEach((d) => {
     const date = d.delivery_date.split("T")[0];
@@ -111,7 +132,6 @@ export default function DeliveryCalendarPage() {
     setCurrentDate(new Date(year, month + offset, 1));
     setSelectedDate(null);
   };
-
   const goToday = () => {
     setCurrentDate(new Date());
     setSelectedDate(todayStr);
@@ -119,18 +139,28 @@ export default function DeliveryCalendarPage() {
 
   const selectedDeliveries = selectedDate ? (deliveriesByDate[selectedDate] || []) : [];
 
-  // Summary counts
   const statusCounts = { pending: 0, delivering: 0, delivered: 0, cancelled: 0 };
   deliveries.forEach((d) => {
     const s = getComputedStatus(d);
     if (s in statusCounts) statusCounts[s as keyof typeof statusCounts]++;
   });
 
+  // Month payment totals (from /deliveries/calendar aggregate)
+  const days = calData?.days ?? {};
+  const monthTotals = Object.values(days).reduce(
+    (acc, d) => ({
+      to_collect: acc.to_collect + d.to_collect,
+      paid: acc.paid + d.paid,
+      unpaid: acc.unpaid + d.unpaid,
+    }),
+    { to_collect: 0, paid: 0, unpaid: 0 }
+  );
+
   return (
     <>
-      <Header title="ปฏิทินการจัดส่ง" />
+      <Header title="ปฏิทินการจัดส่ง & ตามเก็บเงิน" />
       <div className="p-6 space-y-6">
-        {/* Summary cards */}
+        {/* Summary cards: delivery status counts */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {Object.entries(STATUS_MAP).filter(([k]) => k !== "cancelled").map(([key, st]) => (
             <div key={key} className={`rounded-xl border p-4 ${st.bg}`}>
@@ -150,44 +180,46 @@ export default function DeliveryCalendarPage() {
           </div>
         </div>
 
+        {/* Month payment totals — hidden for sales-only role */}
+        {!isSalesOnly && (
+          <div className="bg-white rounded-xl border border-gray-200 p-4 flex flex-wrap items-center gap-6 text-sm">
+            <span className="font-semibold text-gray-700">สรุปยอดเรียกเก็บเดือนนี้:</span>
+            <span className="text-gray-500">ต้องเก็บ <b className="text-gray-800">{fmt(monthTotals.to_collect)}</b></span>
+            <span className="text-gray-500">ชำระแล้ว <b className="text-green-600">{fmt(monthTotals.paid)}</b></span>
+            <span className="text-gray-500">ค้าง <b className="text-red-600">{fmt(monthTotals.unpaid)}</b></span>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
           {/* Calendar */}
           <div className="xl:col-span-3 bg-white rounded-xl border border-gray-200">
-            {/* Calendar header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
               <div className="flex items-center gap-3">
                 <button onClick={() => goMonth(-1)} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
                   <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
                 </button>
-                <h2 className="text-lg font-semibold text-gray-800">
-                  {MONTHS_TH[month]} {year + 543}
-                </h2>
+                <h2 className="text-lg font-semibold text-gray-800">{MONTHS_TH[month]} {year + 543}</h2>
                 <button onClick={() => goMonth(1)} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
                   <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
                 </button>
               </div>
-              <button onClick={goToday} className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-                วันนี้
-              </button>
+              <button onClick={goToday} className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">วันนี้</button>
             </div>
 
             {loading ? (
               <div className="p-12 text-center text-gray-400">กำลังโหลด...</div>
             ) : (
               <div className="p-4">
-                {/* Day headers */}
                 <div className="grid grid-cols-7 mb-2">
                   {DAYS_TH.map((day, i) => (
-                    <div key={day} className={`text-center text-xs font-medium py-2 ${i === 0 ? 'text-red-400' : 'text-gray-500'}`}>
-                      {day}
-                    </div>
+                    <div key={day} className={`text-center text-xs font-medium py-2 ${i === 0 ? 'text-red-400' : 'text-gray-500'}`}>{day}</div>
                   ))}
                 </div>
 
-                {/* Calendar grid */}
                 <div className="grid grid-cols-7 gap-px bg-gray-100 rounded-lg overflow-hidden">
                   {calendarDays.map((cell, idx) => {
                     const dayDeliveries = deliveriesByDate[cell.dateStr] || [];
+                    const agg = days[cell.dateStr];
                     const isToday = cell.dateStr === todayStr;
                     const isSelected = cell.dateStr === selectedDate;
                     const isSunday = idx % 7 === 0;
@@ -196,7 +228,7 @@ export default function DeliveryCalendarPage() {
                       <button
                         key={idx}
                         onClick={() => setSelectedDate(cell.dateStr === selectedDate ? null : cell.dateStr)}
-                        className={`relative min-h-[110px] p-2 text-left transition-colors ${
+                        className={`relative min-h-[120px] p-2 text-left transition-colors ${
                           cell.month !== "current" ? "bg-gray-50" : "bg-white"
                         } ${isSelected ? "ring-2 ring-green-500 ring-inset" : "hover:bg-gray-50"}`}
                       >
@@ -204,13 +236,11 @@ export default function DeliveryCalendarPage() {
                           isToday ? "bg-green-600 text-white font-bold" :
                           cell.month !== "current" ? "text-gray-300" :
                           isSunday ? "text-red-400" : "text-gray-700"
-                        }`}>
-                          {cell.day}
-                        </span>
+                        }`}>{cell.day}</span>
 
                         {dayDeliveries.length > 0 && (
                           <div className="mt-1.5 space-y-1">
-                            {dayDeliveries.slice(0, 3).map((d) => {
+                            {dayDeliveries.slice(0, 2).map((d) => {
                               const cs = getComputedStatus(d);
                               const st = STATUS_MAP[cs] || STATUS_MAP.pending;
                               return (
@@ -228,8 +258,24 @@ export default function DeliveryCalendarPage() {
                                 </div>
                               );
                             })}
-                            {dayDeliveries.length > 3 && (
-                              <div className="text-xs text-gray-500 px-1 font-medium">+{dayDeliveries.length - 3} เพิ่มเติม</div>
+                            {dayDeliveries.length > 2 && (
+                              <div className="text-[10px] text-gray-500 px-1 font-medium">+{dayDeliveries.length - 2} เพิ่มเติม</div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Payment status pills (paid/unpaid) */}
+                        {agg && (agg.paid > 0 || agg.unpaid > 0) && (
+                          <div className="mt-1 space-y-0.5">
+                            {agg.paid > 0 && (
+                              <div className="text-[10px] px-1 py-0.5 rounded bg-green-50 text-green-700 truncate">
+                                {isSalesOnly ? "✓ ชำระแล้ว" : `✓ ${fmt(agg.paid)}`}
+                              </div>
+                            )}
+                            {agg.unpaid > 0 && (
+                              <div className="text-[10px] px-1 py-0.5 rounded bg-red-50 text-red-600 truncate">
+                                {isSalesOnly ? "฿ ยังไม่ชำระ" : `฿ ${fmt(agg.unpaid)}`}
+                              </div>
                             )}
                           </div>
                         )}
@@ -269,16 +315,20 @@ export default function DeliveryCalendarPage() {
                   {selectedDeliveries.map((d) => {
                     const cs = getComputedStatus(d);
                     const st = STATUS_MAP[cs] || STATUS_MAP.pending;
+                    const paid = isPaid(d);
                     return (
                       <button
                         key={d.id}
                         onClick={() => window.open(`/deliveries/${d.id}`, '_blank')}
                         className="w-full text-left px-5 py-3 hover:bg-gray-50 transition-colors"
                       >
-                        <div className="flex items-center gap-2 mb-1">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
                           <span className="font-mono text-xs text-green-700">{d.delivery_number}</span>
                           <span className={`inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-medium ${st.color} ${st.bg}`}>
                             {st.label}
+                          </span>
+                          <span className={`inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-medium ${paid ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"}`}>
+                            {paid ? "ชำระเงินแล้ว" : "ยังไม่ชำระเงิน"}
                           </span>
                         </div>
                         <p className="text-sm font-medium text-gray-800 truncate">{d.customer?.name || "-"}</p>
@@ -303,6 +353,16 @@ export default function DeliveryCalendarPage() {
               )}
             </div>
           </div>
+        </div>
+
+        {/* Legend */}
+        <div className="flex flex-wrap gap-4 text-xs text-gray-500 pt-1">
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-yellow-400" /> รอจัดส่ง</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-400" /> กำลังจัดส่ง</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-400" /> จัดส่งแล้ว</span>
+          <span className="mx-2 text-gray-300">|</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-50 border border-green-200 inline-block" /> ชำระเงินแล้ว</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-50 border border-red-200 inline-block" /> ยังไม่ชำระเงิน</span>
         </div>
       </div>
     </>

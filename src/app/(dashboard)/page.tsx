@@ -7,10 +7,11 @@ import { api } from "@/lib/api";
 import Link from "next/link";
 
 interface DashboardData {
+  restricted?: boolean;
   summary: {
     monthly_orders: number;
-    monthly_sales: number;
-    monthly_payments: number;
+    monthly_sales: number | null;
+    monthly_payments: number | null;
     pending_payments: number;
     total_receivable: number;
     today_deliveries: number;
@@ -68,6 +69,7 @@ export default function DashboardPage() {
   if (!data) return <><Header title="แดชบอร์ด" /><div className="p-12 text-center text-gray-400">ไม่สามารถโหลดข้อมูลได้</div></>;
 
   const s = data.summary;
+  const restricted = data.restricted ?? false;
   const maxTrend = Math.max(...data.sales_trend.map(t => Number(t.total)), 1);
 
   return (
@@ -79,9 +81,9 @@ export default function DashboardPage() {
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs text-gray-500 mb-1">ยอดขายเดือนนี้</p>
-                <p className="text-xl font-bold text-gray-800">{fmt(s.monthly_sales)}</p>
-                <p className="text-xs text-gray-400 mt-1">{s.monthly_orders} คำสั่งซื้อ</p>
+                <p className="text-xs text-gray-500 mb-1">{restricted ? "คำสั่งซื้อเดือนนี้" : "ยอดขายเดือนนี้"}</p>
+                <p className="text-xl font-bold text-gray-800">{restricted || s.monthly_sales === null ? `${s.monthly_orders} รายการ` : fmt(s.monthly_sales)}</p>
+                {!restricted && <p className="text-xs text-gray-400 mt-1">{s.monthly_orders} คำสั่งซื้อ</p>}
               </div>
               <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
                 <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
@@ -91,9 +93,9 @@ export default function DashboardPage() {
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs text-gray-500 mb-1">ชำระเงินเดือนนี้</p>
-                <p className="text-xl font-bold text-green-600">{fmt(s.monthly_payments)}</p>
-                <p className="text-xs text-gray-400 mt-1">{s.pending_payments} รอยืนยัน</p>
+                <p className="text-xs text-gray-500 mb-1">{restricted ? "รอยืนยันชำระเงิน" : "ชำระเงินเดือนนี้"}</p>
+                <p className="text-xl font-bold text-green-600">{restricted || s.monthly_payments === null ? `${s.pending_payments} รายการ` : fmt(s.monthly_payments)}</p>
+                {!restricted && <p className="text-xs text-gray-400 mt-1">{s.pending_payments} รอยืนยัน</p>}
               </div>
               <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
                 <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" /></svg>

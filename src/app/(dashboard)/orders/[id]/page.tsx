@@ -218,6 +218,7 @@ export default function OrderDetailPage() {
   const [deliveryNotes, setDeliveryNotes] = useState("");
   const [deliverySaving, setDeliverySaving] = useState(false);
   const [fullyDelivered, setFullyDelivered] = useState(false);
+  const [finalBillWarning, setFinalBillWarning] = useState<null | { covered: number; total: number; remaining: number }>(null);
 
   // Tabs
   const [activeTab, setActiveTab] = useState<"detail" | "payments" | "deliveries" | "invoices">("detail");
@@ -494,6 +495,7 @@ export default function OrderDetailPage() {
       setExcludedDeliveryItems(new Set());
       setDeliveryDate(new Date().toISOString().split("T")[0]);
       setDeliveryNotes("");
+      setFinalBillWarning(null);
       setShowDeliveryForm(true);
     } catch (err) {
       alert(err instanceof ApiError ? err.message : "เกิดข้อผิดพลาด");
@@ -528,10 +530,20 @@ export default function OrderDetailPage() {
       }, token);
 
       setShowDeliveryForm(false);
+      setFinalBillWarning(null);
       fetchOrder();
       fetchTimeline();
     } catch (err) {
-      alert(err instanceof ApiError ? err.message : "เกิดข้อผิดพลาด");
+      // Feature #1: final bill with incomplete slips requires a note before proceeding
+      if (err instanceof ApiError && err.data?.code === "final_bill_note_required") {
+        setFinalBillWarning({
+          covered: Number(err.data.covered_amount ?? 0),
+          total: Number(err.data.total_amount ?? 0),
+          remaining: Number(err.data.remaining_amount ?? 0),
+        });
+      } else {
+        alert(err instanceof ApiError ? err.message : "เกิดข้อผิดพลาด");
+      }
     } finally {
       setDeliverySaving(false);
     }
@@ -1379,6 +1391,18 @@ export default function OrderDetailPage() {
                 {paymentMethod === "transfer" && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">แนบสลิป</label>
+                    {/* Slip2Go verification notice */}
+                    <div className="mb-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800 flex gap-2">
+                      <svg className="w-4 h-4 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M12 3a9 9 0 100 18 9 9 0 000-18z" /></svg>
+                      <div>
+                        <div className="font-medium">คำแนะนำการแนบสลิป</div>
+                        <ul className="mt-0.5 list-disc pl-4 space-y-0.5 text-blue-700/90">
+                          <li>ระบบใช้ Slip2Go API ตรวจอัตโนมัติ — สลิปบางประเภท (e-wallet, ธนาคารต่างประเทศ, สลิปธุรกิจ, ภาพเบลอ) API อาจอ่านไม่ได้ แล้วขึ้นเป็น <b>&quot;สลิปปลอม&quot;</b> หรือ <b>&quot;ไม่พบข้อมูล&quot;</b> ทั้งที่เป็นสลิปจริง</li>
+                          <li>หากมั่นใจว่าสลิปเป็นของจริง สามารถแนบและกดบันทึกได้ — แต่ต้องระบุ <b>เหตุผลในหมายเหตุ</b> เพื่อให้ผู้อนุมัติตรวจสอบด้วยตนเอง</li>
+                          <li>ใช้ภาพต้นฉบับจากแอปธนาคาร (ไม่ crop, ไม่ resize, JPG/PNG) เพื่อให้ API ตรวจผ่านได้ดีที่สุด</li>
+                        </ul>
+                      </div>
+                    </div>
                     <input
                       type="file"
                       accept="image/jpeg,image/png"
@@ -1462,6 +1486,13 @@ export default function OrderDetailPage() {
                                       </ul>
                                     </div>
                                   )}
+                                  {/* API rejected the slip — surface a self-verify hint (Slip2Go can false-flag valid slips). */}
+                                  {!isSuccess && !isDuplicate && code !== '' && (
+                                    <div className="mt-2 rounded-lg bg-amber-50 border border-amber-200 p-2 text-xs text-amber-800">
+                                      <div className="font-semibold mb-0.5">API ตรวจสลิปนี้ไม่ผ่าน</div>
+                                      <p>หากมั่นใจว่าเป็นสลิปจริง (เช่น สลิป e-wallet / ธนาคารที่ API ไม่รองรับ) โปรด <b>ระบุเหตุผลในหมายเหตุด้านล่าง</b> แล้วบันทึก — payment จะเข้าคิว &quot;รออนุมัติ&quot; ให้ผู้อนุมัติตรวจภาพเอง</p>
+                                    </div>
+                                  )}
                                 </>
                               )}
                                 </div>
@@ -1474,18 +1505,47 @@ export default function OrderDetailPage() {
                   </div>
                 )}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">หมายเหตุ</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    หมายเหตุ {(() => {
+                      const hasFailedSlip = paymentMethod === "transfer" && Object.values(slipResults).some((r) => {
+                        const c = r?.code;
+                        return c && c !== "200000" && c !== "200200" && c !== "200501";
+                      });
+                      return hasFailedSlip ? <span className="text-red-600">(จำเป็นต้องระบุ — มีสลิปที่ API ตรวจไม่ผ่าน)</span> : null;
+                    })()}
+                  </label>
                   <textarea
                     value={paymentNotes}
                     onChange={(e) => setPaymentNotes(e.target.value)}
                     rows={2}
-                    className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none text-sm"
+                    placeholder="เช่น &quot;สลิป KrungThai NEXT — API ยังไม่รองรับ ตรวจภาพยืนยันแล้วโดยตนเอง&quot;"
+                    className={`w-full px-3 py-2 rounded-lg border focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none text-sm ${
+                      paymentMethod === "transfer" && Object.values(slipResults).some((r) => {
+                        const c = r?.code;
+                        return c && c !== "200000" && c !== "200200" && c !== "200501";
+                      }) && !paymentNotes.trim()
+                        ? "border-red-300 bg-red-50/30"
+                        : "border-gray-300"
+                    }`}
                   />
                 </div>
               </div>
               <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-200">
                 <button onClick={() => setShowPaymentForm(false)} className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">ยกเลิก</button>
-                <button onClick={handleCreatePayment} disabled={paymentSaving || !paymentAmount} className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50">
+                <button
+                  onClick={handleCreatePayment}
+                  disabled={
+                    paymentSaving
+                    || !paymentAmount
+                    || (paymentMethod === "transfer"
+                        && Object.values(slipResults).some((r) => {
+                          const c = r?.code;
+                          return c && c !== "200000" && c !== "200200" && c !== "200501";
+                        })
+                        && !paymentNotes.trim())
+                  }
+                  className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+                >
                   {paymentSaving ? "กำลังบันทึก..." : "บันทึก"}
                 </button>
               </div>
@@ -1750,12 +1810,25 @@ export default function OrderDetailPage() {
                 })()}
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">หมายเหตุ</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    หมายเหตุ {finalBillWarning && <span className="text-red-600">(จำเป็นต้องระบุ)</span>}
+                  </label>
+                  {finalBillWarning && (
+                    <div className="mb-2 px-3 py-2.5 text-sm bg-red-50 border border-red-200 rounded-lg text-red-700">
+                      <p className="font-medium">⚠ บิลส่งสินค้าสุดท้าย — แนบสลิปไม่ครบ</p>
+                      <p className="text-xs mt-1">
+                        ยอดที่แนบสลิปแล้ว {finalBillWarning.covered.toLocaleString("th-TH", { minimumFractionDigits: 2 })} /
+                        ยอดรวม {finalBillWarning.total.toLocaleString("th-TH", { minimumFractionDigits: 2 })} บาท
+                        (ขาดอีก {finalBillWarning.remaining.toLocaleString("th-TH", { minimumFractionDigits: 2 })} บาท)
+                      </p>
+                      <p className="text-xs mt-1">กรุณาระบุหมายเหตุประกอบก่อนดำเนินการต่อ</p>
+                    </div>
+                  )}
                   <textarea
                     value={deliveryNotes}
                     onChange={(e) => setDeliveryNotes(e.target.value)}
                     rows={2}
-                    className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none text-sm"
+                    className={`w-full px-3 py-2 rounded-lg border focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none text-sm ${finalBillWarning && !deliveryNotes.trim() ? "border-red-300 bg-red-50/30" : "border-gray-300"}`}
                   />
                 </div>
               </div>
@@ -1763,7 +1836,7 @@ export default function OrderDetailPage() {
                 <button onClick={() => setShowDeliveryForm(false)} className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">ยกเลิก</button>
                 <button
                   onClick={handleCreateDelivery}
-                  disabled={deliverySaving || !deliveryDate || Object.values(deliveryQuantities).every(q => !q || Number(q) <= 0)}
+                  disabled={deliverySaving || !deliveryDate || Object.values(deliveryQuantities).every(q => !q || Number(q) <= 0) || (!!finalBillWarning && !deliveryNotes.trim())}
                   className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
                 >
                   {deliverySaving ? "กำลังบันทึก..." : "สร้างใบส่งสินค้า"}
