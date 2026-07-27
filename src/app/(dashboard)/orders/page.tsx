@@ -35,15 +35,18 @@ const DELIVERY_STATUS_MAP: Record<string, { label: string; color: string; icon: 
 };
 
 export default function OrdersPage() {
-  const { token } = useAuth();
+  const { token, hasPermission } = useAuth();
   const searchParams = useSearchParams();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState(searchParams.get("status") || "");
+  const [ownerFilter, setOwnerFilter] = useState<"all" | "me">("all");
   const [page, setPage] = useState(1);
   const [lastPage, setLastPage] = useState(1);
   const [total, setTotal] = useState(0);
+
+  const canViewAll = hasPermission("records.view_all");
 
   const fetchOrders = useCallback(async () => {
     if (!token) return;
@@ -51,6 +54,7 @@ export default function OrdersPage() {
       const params = new URLSearchParams();
       if (search) params.set("search", search);
       if (filterStatus) params.set("status", filterStatus);
+      if (ownerFilter === "me") params.set("owner", "me");
       params.set("per_page", "10");
       params.set("page", page.toString());
       const data = await api.get<{ data: Order[]; last_page: number; total: number }>(`/orders?${params}`, token);
@@ -62,7 +66,7 @@ export default function OrdersPage() {
     } finally {
       setLoading(false);
     }
-  }, [token, search, filterStatus, page]);
+  }, [token, search, filterStatus, ownerFilter, page]);
 
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
 
@@ -115,6 +119,17 @@ export default function OrdersPage() {
                 <option key={k} value={k}>{v.label}</option>
               ))}
             </select>
+            {canViewAll && (
+              <label className="flex items-center gap-2 px-3 py-2 text-sm bg-white border border-gray-200 rounded-lg cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={ownerFilter === "me"}
+                  onChange={(e) => { setOwnerFilter(e.target.checked ? "me" : "all"); setPage(1); }}
+                  className="w-4 h-4 accent-green-600"
+                />
+                <span className="text-gray-700">ดูเฉพาะของฉัน</span>
+              </label>
+            )}
           </div>
         </div>
 

@@ -94,7 +94,7 @@ interface DailySummary {
 }
 
 export default function DeliveryScanPage() {
-  const { token, hasRole } = useAuth();
+  const { token, hasPermission } = useAuth();
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -120,8 +120,10 @@ export default function DeliveryScanPage() {
   const [dailyData, setDailyData] = useState<DailySummary | null>(null);
   const [dailyLoading, setDailyLoading] = useState(false);
 
-  // Sales-only users must NOT see grand totals / cumulative order amounts.
-  const isSalesOnly = hasRole("sales") && !hasRole("admin") && !hasRole("manager");
+  // Users without the 'finance.view_totals' permission must NOT see grand totals
+  // (order-level cumulative amounts). Renamed to `hideTotals` but keeps the old
+  // check name intact for the existing JSX below.
+  const isSalesOnly = !hasPermission("finance.view_totals");
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/api$/, "") || "http://localhost:7000";
 

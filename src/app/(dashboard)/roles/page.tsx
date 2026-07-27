@@ -36,6 +36,8 @@ const groupLabels: Record<string, string> = {
   roles: "บทบาท",
   settings: "ตั้งค่า",
   accounts: "บัญชีที่เข้าถึงได้",
+  records: "การเข้าถึงข้อมูล",
+  finance: "การเงิน / ยอดรวม",
 };
 
 export default function RolesPage() {

@@ -88,7 +88,7 @@ function computeDateRange(preset: DatePreset): { from: string; to: string } {
 }
 
 export default function DeliveriesPage() {
-  const { token } = useAuth();
+  const { token, hasPermission } = useAuth();
   const searchParams = useSearchParams();
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [loading, setLoading] = useState(true);
@@ -97,9 +97,13 @@ export default function DeliveriesPage() {
   const [datePreset, setDatePreset] = useState<DatePreset>("");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
+  const [ownerFilter, setOwnerFilter] = useState<"all" | "me">("all");
   const [page, setPage] = useState(1);
   const [lastPage, setLastPage] = useState(1);
   const [total, setTotal] = useState(0);
+
+  // Users who can't see everyone's records anyway shouldn't get the toggle.
+  const canViewAll = hasPermission("records.view_all");
 
   const { effFrom, effTo } = (() => {
     if (datePreset === "custom") return { effFrom: customFrom, effTo: customTo };
@@ -115,6 +119,7 @@ export default function DeliveriesPage() {
       if (filterStatus) params.set("status", filterStatus);
       if (effFrom) params.set("date_from", effFrom);
       if (effTo) params.set("date_to", effTo);
+      if (ownerFilter === "me") params.set("owner", "me");
       params.set("per_page", "10");
       params.set("page", page.toString());
       const data = await api.get<{ data: Delivery[]; last_page: number; total: number }>(`/deliveries?${params}`, token);
@@ -126,7 +131,7 @@ export default function DeliveriesPage() {
     } finally {
       setLoading(false);
     }
-  }, [token, search, filterStatus, effFrom, effTo, page]);
+  }, [token, search, filterStatus, effFrom, effTo, ownerFilter, page]);
 
   useEffect(() => { fetchDeliveries(); }, [fetchDeliveries]);
 
@@ -169,6 +174,17 @@ export default function DeliveriesPage() {
                 <option key={k} value={k}>{v.label}</option>
               ))}
             </select>
+            {canViewAll && (
+              <label className="flex items-center gap-2 px-3 py-2 text-sm bg-white border border-gray-200 rounded-lg cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={ownerFilter === "me"}
+                  onChange={(e) => { setOwnerFilter(e.target.checked ? "me" : "all"); setPage(1); }}
+                  className="w-4 h-4 accent-green-600"
+                />
+                <span className="text-gray-700">ดูเฉพาะของฉัน</span>
+              </label>
+            )}
           </div>
           <button
             onClick={() => window.open("/deliveries/scan", "_blank")}

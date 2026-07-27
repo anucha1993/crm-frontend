@@ -57,9 +57,10 @@ const MONTHS_TH = [
 ];
 
 export default function DeliveryCalendarPage() {
-  const { token, hasRole } = useAuth();
-  // Sales-only users must NOT see grand totals or per-day amount aggregates.
-  const isSalesOnly = hasRole("sales") && !hasRole("admin") && !hasRole("manager");
+  const { token, hasPermission } = useAuth();
+  // Users without the 'finance.view_totals' permission must NOT see grand totals
+  // or per-day amount aggregates.
+  const isSalesOnly = !hasPermission("finance.view_totals");
 
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [calData, setCalData] = useState<CalendarData | null>(null);
