@@ -41,8 +41,11 @@ export default function UsersPage() {
       const qs = params.toString() ? `?${params.toString()}` : "";
       const data = await api.get<{ data: UserItem[] }>(`/users${qs}`, token);
       setUsers(data.data);
-    } catch {
-      // silent
+    } catch (err) {
+      console.error('[UsersPage] fetch failed:', err);
+      if (err instanceof ApiError) {
+        alert(`โหลดรายชื่อผู้ใช้ไม่สำเร็จ (${err.status}): ${err.message}`);
+      }
     } finally {
       setLoading(false);
     }
