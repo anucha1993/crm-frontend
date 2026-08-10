@@ -8,7 +8,7 @@ import { api } from "@/lib/api";
 interface Delivery {
   id: number;
   delivery_number: string;
-  order: { id: number; order_number: string; total?: string; paid_amount?: string; remaining_amount?: string } | null;
+  order: { id: number; order_number: string; total?: string; paid_amount?: string; remaining_amount?: string; pending_payment_amount?: string | number | null } | null;
   customer: { id: number; name: string } | null;
   status: string;
   delivery_date: string;
@@ -21,6 +21,7 @@ interface DayAgg {
   delivery_count: number;
   to_collect: number;
   paid: number;
+  pending: number;
   unpaid: number;
 }
 
@@ -45,10 +46,20 @@ function getComputedStatus(delivery: Delivery): string {
   return dd <= today ? "delivering" : "pending";
 }
 
-function isPaid(d: Delivery): boolean {
+type PayState = "paid" | "pending" | "unpaid";
+
+function getPaymentState(d: Delivery): PayState {
   const remaining = Number(d.order?.remaining_amount ?? 0);
-  return remaining <= 0.01;
+  if (remaining <= 0.01) return "paid";
+  const pending = Number(d.order?.pending_payment_amount ?? 0);
+  return pending > 0.01 ? "pending" : "unpaid";
 }
+
+const PAY_STATE_MAP: Record<PayState, { label: string; badge: string }> = {
+  paid:    { label: "ชำระเงินแล้ว",       badge: "bg-green-50 text-green-700" },
+  pending: { label: "รอยืนยันการชำระ", badge: "bg-amber-50 text-amber-700" },
+  unpaid:  { label: "ยังไม่ชำระเงิน",     badge: "bg-red-50 text-red-600" },
+};
 
 const DAYS_TH = ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."];
 const MONTHS_TH = [
@@ -152,9 +163,10 @@ export default function DeliveryCalendarPage() {
     (acc, d) => ({
       to_collect: acc.to_collect + d.to_collect,
       paid: acc.paid + d.paid,
+      pending: acc.pending + (d.pending ?? 0),
       unpaid: acc.unpaid + d.unpaid,
     }),
-    { to_collect: 0, paid: 0, unpaid: 0 }
+    { to_collect: 0, paid: 0, pending: 0, unpaid: 0 }
   );
 
   return (
@@ -187,6 +199,7 @@ export default function DeliveryCalendarPage() {
             <span className="font-semibold text-gray-700">สรุปยอดเรียกเก็บเดือนนี้:</span>
             <span className="text-gray-500">ต้องเก็บ <b className="text-gray-800">{fmt(monthTotals.to_collect)}</b></span>
             <span className="text-gray-500">ชำระแล้ว <b className="text-green-600">{fmt(monthTotals.paid)}</b></span>
+            <span className="text-gray-500">รอยืนยัน <b className="text-amber-600">{fmt(monthTotals.pending)}</b></span>
             <span className="text-gray-500">ค้าง <b className="text-red-600">{fmt(monthTotals.unpaid)}</b></span>
           </div>
         )}
@@ -265,12 +278,17 @@ export default function DeliveryCalendarPage() {
                           </div>
                         )}
 
-                        {/* Payment status pills (paid/unpaid) */}
-                        {agg && (agg.paid > 0 || agg.unpaid > 0) && (
+                        {/* Payment status pills (paid / pending verification / unpaid) */}
+                        {agg && (agg.paid > 0 || (agg.pending ?? 0) > 0 || agg.unpaid > 0) && (
                           <div className="mt-1 space-y-0.5">
                             {agg.paid > 0 && (
                               <div className="text-[10px] px-1 py-0.5 rounded bg-green-50 text-green-700 truncate">
                                 {isSalesOnly ? "✓ ชำระแล้ว" : `✓ ${fmt(agg.paid)}`}
+                              </div>
+                            )}
+                            {(agg.pending ?? 0) > 0 && (
+                              <div className="text-[10px] px-1 py-0.5 rounded bg-amber-50 text-amber-700 truncate" title="รอยืนยันการชำระเงิน (มีสลิปแนบแล้วรออนุมัติ)">
+                                {isSalesOnly ? "⧗ รอยืนยัน" : `⧗ ${fmt(agg.pending ?? 0)}`}
                               </div>
                             )}
                             {agg.unpaid > 0 && (
@@ -316,7 +334,8 @@ export default function DeliveryCalendarPage() {
                   {selectedDeliveries.map((d) => {
                     const cs = getComputedStatus(d);
                     const st = STATUS_MAP[cs] || STATUS_MAP.pending;
-                    const paid = isPaid(d);
+                    const payState = getPaymentState(d);
+                    const payInfo = PAY_STATE_MAP[payState];
                     return (
                       <button
                         key={d.id}
@@ -328,8 +347,11 @@ export default function DeliveryCalendarPage() {
                           <span className={`inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-medium ${st.color} ${st.bg}`}>
                             {st.label}
                           </span>
-                          <span className={`inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-medium ${paid ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"}`}>
-                            {paid ? "ชำระเงินแล้ว" : "ยังไม่ชำระเงิน"}
+                          <span
+                            className={`inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-medium ${payInfo.badge}`}
+                            title={payState === "pending" ? "มีสลิปแนบแล้วรอผู้อนุมัติ ยังไม่ต้องตามเก็บ" : undefined}
+                          >
+                            {payInfo.label}
                           </span>
                         </div>
                         <p className="text-sm font-medium text-gray-800 truncate">{d.customer?.name || "-"}</p>
@@ -363,6 +385,7 @@ export default function DeliveryCalendarPage() {
           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-400" /> จัดส่งแล้ว</span>
           <span className="mx-2 text-gray-300">|</span>
           <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-50 border border-green-200 inline-block" /> ชำระเงินแล้ว</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-amber-50 border border-amber-200 inline-block" /> รอยืนยันการชำระเงิน</span>
           <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-50 border border-red-200 inline-block" /> ยังไม่ชำระเงิน</span>
         </div>
       </div>

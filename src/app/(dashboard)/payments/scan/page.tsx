@@ -92,7 +92,9 @@ interface PendingByOrder {
 }
 
 export default function PaymentScanPage() {
-  const { token } = useAuth();
+  const { token, hasPermission } = useAuth();
+  const canApprovePayment = hasPermission("payments.approve");
+  const canRejectPayment = hasPermission("payments.reject");
   const [manualInput, setManualInput] = useState("");
   const [scanning, setScanning] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -444,15 +446,20 @@ export default function PaymentScanPage() {
               )}
 
               {/* Action buttons — hidden when the aggregated "สลิปที่รอการอนุมัติ" list below
-                  covers this payment (avoids duplicate approve buttons). */}
-              {payment.status === "pending" && !(orderPending && orderPending.pending_payments.some((p) => p.id === payment.id)) && (
+                  covers this payment (avoids duplicate approve buttons). Also hidden if user
+                  lacks payments.approve / payments.reject. */}
+              {payment.status === "pending" && !(orderPending && orderPending.pending_payments.some((p) => p.id === payment.id)) && (canApprovePayment || canRejectPayment) && (
                 <div className="mt-4 flex gap-2">
-                  <button onClick={handleApprove} className="flex-1 px-4 py-2.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium">
-                    อนุมัติการชำระเงิน
-                  </button>
-                  <button onClick={handleReject} className="flex-1 px-4 py-2.5 text-sm border border-red-200 text-red-600 rounded-lg hover:bg-red-50 transition-colors font-medium">
-                    ปฏิเสธ
-                  </button>
+                  {canApprovePayment && (
+                    <button onClick={handleApprove} className="flex-1 px-4 py-2.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium">
+                      อนุมัติการชำระเงิน
+                    </button>
+                  )}
+                  {canRejectPayment && (
+                    <button onClick={handleReject} className="flex-1 px-4 py-2.5 text-sm border border-red-200 text-red-600 rounded-lg hover:bg-red-50 transition-colors font-medium">
+                      ปฏิเสธ
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -597,19 +604,22 @@ export default function PaymentScanPage() {
                         </p>
                         {pp.creator && <p className="text-[11px] text-gray-400">โดย {pp.creator.name}</p>}
                       </div>
-                      <button
-                        onClick={() => handleRejectPending(pp.id)}
-                        className="self-start text-xs px-2.5 py-1 border border-red-200 text-red-600 rounded-lg hover:bg-red-50"
-                      >
-                        ปฏิเสธ
-                      </button>
+                      {canRejectPayment && (
+                        <button
+                          onClick={() => handleRejectPending(pp.id)}
+                          className="self-start text-xs px-2.5 py-1 border border-red-200 text-red-600 rounded-lg hover:bg-red-50"
+                        >
+                          ปฏิเสธ
+                        </button>
+                      )}
                     </div>
                     );
                   })}
                 </div>
 
-                {/* Single approve button ALWAYS at the BOTTOM of the slip list */}
-                {(() => {
+                {/* Single approve button ALWAYS at the BOTTOM of the slip list.
+                    Hidden entirely for users who lack payments.approve. */}
+                {canApprovePayment ? (() => {
                   const selCount = orderPending.pending_payments.filter(p => selectedIds.has(p.id)).length;
                   const total = orderPending.pending_payments.length;
                   const isAll = selCount === total;
@@ -628,7 +638,11 @@ export default function PaymentScanPage() {
                             : `อนุมัติที่เลือก (${selCount} / ${total} รายการ)`}
                     </button>
                   );
-                })()}
+                })() : (
+                  <div className="w-full mt-4 py-3 text-center text-sm text-gray-400 italic border border-dashed border-gray-200 rounded-lg">
+                    ไม่มีสิทธิ์อนุมัติการชำระเงิน (ต้อง role ที่มีสิทธิ์ payments.approve)
+                  </div>
+                )}
               </div>
             )}
 

@@ -78,8 +78,9 @@ interface DailyDelivery {
   delivery_total: number;
   order_total: number;
   order_paid: number;
+  order_pending: number;
   order_remaining: number;
-  payment_status: "paid" | "unpaid";
+  payment_status: "paid" | "pending_verification" | "unpaid";
   creator: { id: number; name: string } | null;
 }
 interface DailySummary {
@@ -89,6 +90,7 @@ interface DailySummary {
     delivery_count: number;
     total_to_collect: number;
     total_paid: number;
+    total_pending: number;
     total_unpaid: number;
   };
 }
@@ -120,10 +122,16 @@ export default function DeliveryScanPage() {
   const [dailyData, setDailyData] = useState<DailySummary | null>(null);
   const [dailyLoading, setDailyLoading] = useState(false);
 
-  // Users without the 'finance.view_totals' permission must NOT see grand totals
-  // (order-level cumulative amounts). Renamed to `hideTotals` but keeps the old
-  // check name intact for the existing JSX below.
+  // Sales-only users must NOT see grand totals / cumulative order amounts.
+  // (renamed from role-based check to permission-based)
   const isSalesOnly = !hasPermission("finance.view_totals");
+
+  // Approver permissions — control who can see/click the action buttons on the
+  // slip cards and the "confirm delivery" button. Non-approvers still see the
+  // page (they can scan + view info) but the mutating buttons are hidden.
+  const canApprovePayment = hasPermission("payments.approve");
+  const canRejectPayment = hasPermission("payments.reject");
+  const canConfirmDelivery = hasPermission("deliveries.confirm");
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/api$/, "") || "http://localhost:7000";
 
@@ -531,28 +539,37 @@ export default function DeliveryScanPage() {
                             ดูสลิป
                           </button>
                         )}
-                        <button
-                          onClick={() => handleApproveSlip(p.id)}
-                          disabled={slipActionLoading === p.id}
-                          className="flex-1 px-3 py-2 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 font-medium"
-                        >
-                          {slipActionLoading === p.id ? "กำลังบันทึก..." : "อนุมัติสลิป"}
-                        </button>
-                        <button
-                          onClick={() => handleRejectSlip(p.id)}
-                          disabled={slipActionLoading === p.id}
-                          className="px-3 py-2 text-xs border border-red-200 text-red-600 rounded-lg hover:bg-red-50 disabled:opacity-50 font-medium"
-                        >
-                          ปฏิเสธ
-                        </button>
+                        {canApprovePayment && (
+                          <button
+                            onClick={() => handleApproveSlip(p.id)}
+                            disabled={slipActionLoading === p.id}
+                            className="flex-1 px-3 py-2 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 font-medium"
+                          >
+                            {slipActionLoading === p.id ? "กำลังบันทึก..." : "อนุมัติสลิป"}
+                          </button>
+                        )}
+                        {canRejectPayment && (
+                          <button
+                            onClick={() => handleRejectSlip(p.id)}
+                            disabled={slipActionLoading === p.id}
+                            className="px-3 py-2 text-xs border border-red-200 text-red-600 rounded-lg hover:bg-red-50 disabled:opacity-50 font-medium"
+                          >
+                            ปฏิเสธ
+                          </button>
+                        )}
+                        {!canApprovePayment && !canRejectPayment && (
+                          <span className="flex-1 px-3 py-2 text-xs text-gray-400 text-center italic">
+                            ไม่มีสิทธิ์อนุมัติ/ปฏิเสธ (ต้อง role ที่มีสิทธิ์ payments.approve)
+                          </span>
+                        )}
                       </div>
                     </div>
                   ))}
                 </div>
               )}
 
-              {/* Confirm button */}
-              {delivery.status !== "delivered" && delivery.status !== "cancelled" && (
+              {/* Confirm button — only visible to users with deliveries.confirm */}
+              {delivery.status !== "delivered" && delivery.status !== "cancelled" && canConfirmDelivery && (
                 <button
                   onClick={handleConfirm}
                   disabled={confirmLoading}
@@ -568,6 +585,12 @@ export default function DeliveryScanPage() {
                     </span>
                   ) : "✓ ยืนยันจัดส่งแล้ว"}
                 </button>
+              )}
+
+              {delivery.status !== "delivered" && delivery.status !== "cancelled" && !canConfirmDelivery && (
+                <div className="w-full py-3 text-center text-sm text-gray-400 italic border border-dashed border-gray-200 rounded-lg">
+                  ไม่มีสิทธิ์ยืนยันจัดส่ง (ต้อง role ที่มีสิทธิ์ deliveries.confirm)
+                </div>
               )}
 
               {delivery.status === "delivered" && (
@@ -600,7 +623,7 @@ export default function DeliveryScanPage() {
 
             {/* Summary cards — grand totals hidden for sales-only role */}
             {dailyData && (
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
                 <div className="bg-white rounded-xl border border-gray-200 p-5">
                   <p className="text-xs text-gray-500 mb-1">จำนวนบิลจัดส่ง</p>
                   <p className="text-2xl font-bold text-gray-800">{dailyData.summary.delivery_count}</p>
@@ -616,7 +639,11 @@ export default function DeliveryScanPage() {
                       <p className="text-2xl font-bold text-green-600">{fmt(dailyData.summary.total_paid)}</p>
                     </div>
                     <div className="bg-white rounded-xl border border-gray-200 p-5">
-                      <p className="text-xs text-gray-500 mb-1">ค้างชำระ</p>
+                      <p className="text-xs text-gray-500 mb-1">รอยืนยัน</p>
+                      <p className="text-2xl font-bold text-amber-600">{fmt(dailyData.summary.total_pending ?? 0)}</p>
+                    </div>
+                    <div className="bg-white rounded-xl border border-gray-200 p-5">
+                      <p className="text-xs text-gray-500 mb-1">ค้างชำระ (ตามเก็บเงิน)</p>
                       <p className="text-2xl font-bold text-red-600">{fmt(dailyData.summary.total_unpaid)}</p>
                     </div>
                   </>
@@ -675,6 +702,11 @@ export default function DeliveryScanPage() {
                           <td className="px-4 py-3 text-center">
                             {d.payment_status === "paid" ? (
                               <span className="inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700">ชำระเงินแล้ว</span>
+                            ) : d.payment_status === "pending_verification" ? (
+                              <span
+                                className="inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700"
+                                title="มีสลิปแนบแล้วรอผู้อนุมัติ ยังไม่ต้องตามเก็บ"
+                              >รอยืนยันการชำระ</span>
                             ) : (
                               <span className="inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-600">ยังไม่ชำระเงิน</span>
                             )}
