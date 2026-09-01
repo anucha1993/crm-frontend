@@ -592,7 +592,7 @@ export default function ProductsPage() {
                           )}
                         </div>
                         <div>
-                          <label className="block text-xs font-medium text-gray-500 mb-1">ความหนา</label>
+                          <label className="block text-xs font-medium text-gray-500 mb-1">ความกว้าง</label>
                           <div className="flex gap-1">
                             <input
                               type="number"
