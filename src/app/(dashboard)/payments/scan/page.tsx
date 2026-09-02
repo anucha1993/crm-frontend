@@ -91,10 +91,128 @@ interface PendingByOrder {
   pending_total: number;
 }
 
+interface PaymentListItem {
+  id: number;
+  payment_number: string;
+  method: string;
+  amount: string;
+  status: string;
+  is_deposit: boolean;
+  reject_reason: string | null;
+  slip_verified: boolean;
+  sender_name: string | null;
+  order: { id: number; order_number: string } | null;
+  customer: { id: number; name: string; code: string } | null;
+  creator: { id: number; name: string } | null;
+  approver: { id: number; name: string } | null;
+  approved_at: string | null;
+  created_at: string;
+}
+
+function PendingHistoryList({
+  items,
+  loading,
+  emptyText,
+  mode,
+  onOpen,
+  onRevert,
+  revertingId,
+  canRevert,
+}: {
+  items: PaymentListItem[];
+  loading: boolean;
+  emptyText: string;
+  mode: "pending" | "history";
+  onOpen: (paymentNumber: string) => void;
+  onRevert: (id: number, prevStatus: string) => void;
+  revertingId: number | null;
+  canRevert: boolean;
+}) {
+  const fmt = (v: string | number) =>
+    Number(v).toLocaleString("th-TH", { minimumFractionDigits: 2 });
+  const fmtDate = (d: string) =>
+    new Date(d).toLocaleDateString("th-TH", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+
+  if (loading) {
+    return <div className="text-center py-10 text-sm text-gray-400">กำลังโหลด...</div>;
+  }
+  if (items.length === 0) {
+    return (
+      <div className="bg-white rounded-xl border border-gray-200 p-10 text-center text-sm text-gray-400">
+        {emptyText}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {items.map((p) => {
+        const statusColor =
+          p.status === "approved"
+            ? "bg-green-50 text-green-700 border-green-200"
+            : p.status === "rejected"
+              ? "bg-red-50 text-red-600 border-red-200"
+              : "bg-yellow-50 text-yellow-700 border-yellow-200";
+        const statusLabel =
+          p.status === "approved" ? "อนุมัติแล้ว" : p.status === "rejected" ? "ปฏิเสธ" : "รอยืนยัน";
+        return (
+          <div
+            key={p.id}
+            className="bg-white border border-gray-200 rounded-lg p-4 flex items-start gap-3 hover:border-green-300 transition-colors"
+          >
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={() => onOpen(p.payment_number)}
+                  className="font-medium text-sm text-blue-700 hover:underline"
+                >
+                  {p.payment_number}
+                </button>
+                <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium border ${statusColor}`}>
+                  {statusLabel}
+                </span>
+                {p.is_deposit && <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-600">มัดจำ</span>}
+                {p.slip_verified && <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-50 text-green-700">สลิปยืนยัน</span>}
+              </div>
+              <p className="text-lg font-bold text-gray-800 mt-1">{fmt(p.amount)} <span className="text-xs font-normal text-gray-500">บาท</span></p>
+              <div className="text-xs text-gray-500 mt-1 space-y-0.5">
+                {p.order && <div>คำสั่งซื้อ: <span className="text-gray-700">{p.order.order_number}</span></div>}
+                {p.customer && <div>ลูกค้า: <span className="text-gray-700">{p.customer.name}</span></div>}
+                {p.sender_name && <div>ผู้โอน: <span className="text-gray-700">{p.sender_name}</span></div>}
+                <div>วันที่: {fmtDate(p.created_at)}</div>
+                {mode === "history" && p.approver && (
+                  <div>โดย: <span className="text-gray-700">{p.approver.name}</span>{p.approved_at ? ` · ${fmtDate(p.approved_at)}` : ""}</div>
+                )}
+                {p.reject_reason && (
+                  <div className="text-red-600">เหตุผลที่ปฏิเสธ: {p.reject_reason}</div>
+                )}
+              </div>
+            </div>
+            {mode === "history" && canRevert && (p.status === "approved" || p.status === "rejected") && (
+              <button
+                onClick={() => onRevert(p.id, p.status)}
+                disabled={revertingId === p.id}
+                className="self-start text-xs px-2.5 py-1.5 border border-orange-200 text-orange-600 rounded-lg hover:bg-orange-50 whitespace-nowrap disabled:opacity-50"
+              >
+                {revertingId === p.id
+                  ? "กำลังยกเลิก..."
+                  : p.status === "approved"
+                    ? "ยกเลิกการอนุมัติ"
+                    : "ยกเลิกการปฏิเสธ"}
+              </button>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function PaymentScanPage() {
   const { token, hasPermission } = useAuth();
   const canApprovePayment = hasPermission("payments.approve");
   const canRejectPayment = hasPermission("payments.reject");
+  const [activeTab, setActiveTab] = useState<"scan" | "pending" | "history">("scan");
   const [manualInput, setManualInput] = useState("");
   const [scanning, setScanning] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -105,6 +223,11 @@ export default function PaymentScanPage() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [approvingAll, setApprovingAll] = useState(false);
   const [error, setError] = useState("");
+  // Tab data: pending list + history list
+  const [pendingList, setPendingList] = useState<PaymentListItem[]>([]);
+  const [historyList, setHistoryList] = useState<PaymentListItem[]>([]);
+  const [tabLoading, setTabLoading] = useState(false);
+  const [revertingId, setRevertingId] = useState<number | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -235,6 +358,62 @@ export default function PaymentScanPage() {
     }
   };
 
+  const loadPendingList = useCallback(async () => {
+    if (!token) return;
+    setTabLoading(true);
+    try {
+      const res = await api.get<{ data: PaymentListItem[] }>("/payments?status=pending&per_page=50", token);
+      setPendingList(res.data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setTabLoading(false);
+    }
+  }, [token]);
+
+  const loadHistoryList = useCallback(async () => {
+    if (!token) return;
+    setTabLoading(true);
+    try {
+      const res = await api.get<{ data: PaymentListItem[] }>("/payments?status=approved,rejected&per_page=50", token);
+      setHistoryList(res.data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setTabLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    if (activeTab === "pending") loadPendingList();
+    else if (activeTab === "history") loadHistoryList();
+  }, [activeTab, loadPendingList, loadHistoryList]);
+
+  const handleRevert = async (paymentId: number, prevStatus: string) => {
+    if (!token) return;
+    const label = prevStatus === "approved" ? "การอนุมัติ" : "การปฏิเสธ";
+    if (!confirm(`ต้องการยกเลิก${label}นี้? รายการจะกลับไปให้พิจารณาอนุมัติใหม่`)) return;
+    setRevertingId(paymentId);
+    try {
+      const res = await api.post<{ payment: { payment_number: string } }>(`/payments/${paymentId}/revert`, {}, token);
+      // Jump to scan tab with the reverted payment loaded for re-approval
+      const paymentNumber = res.payment?.payment_number;
+      if (paymentNumber) {
+        setActiveTab("scan");
+        await lookupPayment(paymentNumber);
+      }
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : "เกิดข้อผิดพลาด");
+    } finally {
+      setRevertingId(null);
+    }
+  };
+
+  const openPaymentInScan = (paymentNumber: string) => {
+    setActiveTab("scan");
+    lookupPayment(paymentNumber);
+  };
+
   // QR Scanner using BarcodeDetector API
   const startScanning = async () => {
     setScanning(true);
@@ -300,7 +479,30 @@ export default function PaymentScanPage() {
   return (
     <>
       <Header title="การชำระเงิน" />
-      <div className="p-6 space-y-6 max-w-3xl mx-auto">
+      <div className="p-6 space-y-4 max-w-3xl mx-auto">
+        {/* Tabs */}
+        <div className="flex border-b border-gray-200 gap-1 overflow-x-auto">
+          {[
+            { key: "scan" as const, label: "สแกนตรวจสอบ" },
+            { key: "pending" as const, label: `ค้างตรวจสอบ${pendingList.length ? ` (${pendingList.length})` : ""}` },
+            { key: "history" as const, label: "ประวัติการตรวจสอบ" },
+          ].map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setActiveTab(t.key)}
+              className={`px-4 py-2.5 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${
+                activeTab === t.key
+                  ? "border-green-600 text-green-700"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {activeTab === "scan" && (
+        <div className="space-y-6">
         {/* Scanner section */}
         <div className="bg-white rounded-xl border border-gray-200 p-5">
           <h3 className="text-sm font-semibold text-gray-800 mb-4">สแกน QR Code ตรวจสอบการชำระเงิน</h3>
@@ -656,6 +858,34 @@ export default function PaymentScanPage() {
               </button>
             </div>
           </div>
+        )}
+        </div>
+        )}
+
+        {activeTab === "pending" && (
+          <PendingHistoryList
+            items={pendingList}
+            loading={tabLoading}
+            emptyText="ไม่มีรายการชำระเงินที่ค้างตรวจสอบ"
+            mode="pending"
+            onOpen={openPaymentInScan}
+            onRevert={handleRevert}
+            revertingId={revertingId}
+            canRevert={canApprovePayment}
+          />
+        )}
+
+        {activeTab === "history" && (
+          <PendingHistoryList
+            items={historyList}
+            loading={tabLoading}
+            emptyText="ยังไม่มีประวัติการตรวจสอบ"
+            mode="history"
+            onOpen={openPaymentInScan}
+            onRevert={handleRevert}
+            revertingId={revertingId}
+            canRevert={canApprovePayment}
+          />
         )}
       </div>
     </>
