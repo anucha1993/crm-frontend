@@ -30,7 +30,17 @@ interface PaymentDetail {
     paid_amount: string;
     remaining_amount: string;
     customer: { id: number; name: string; code: string } | null;
-    items: { id: number; description: string; quantity: string; unit: string; amount: string }[];
+    items: {
+      id: number;
+      description: string;
+      quantity: string;
+      unit: string;
+      amount: string;
+      unit_price?: string;
+      thickness?: string | null;
+      length?: string | null;
+      product?: { id: number; name: string; code: string | null } | null;
+    }[];
   } | null;
   customer: { id: number; name: string; code: string } | null;
   creator: { id: number; name: string } | null;
@@ -776,7 +786,15 @@ export default function PaymentScanPage() {
                         <tbody className="divide-y divide-gray-100">
                           {payment.order.items.map((item) => (
                             <tr key={item.id}>
-                              <td className="px-3 py-2 text-gray-800">{item.description}</td>
+                              <td className="px-3 py-2 text-gray-800">
+                                <div className="font-medium">{item.product?.name || item.description || "-"}</div>
+                                {(item.product?.code || (item.description && item.description !== item.product?.name)) && (
+                                  <div className="text-[11px] text-gray-400">
+                                    {item.product?.code || ""}
+                                    {item.description && item.description !== item.product?.name ? `${item.product?.code ? " — " : ""}${item.description}` : ""}
+                                  </div>
+                                )}
+                              </td>
                               <td className="px-3 py-2 text-right text-gray-600">{Number(item.quantity).toLocaleString()} {item.unit}</td>
                               <td className="px-3 py-2 text-right font-medium text-gray-800">{formatCurrency(item.amount)}</td>
                             </tr>
