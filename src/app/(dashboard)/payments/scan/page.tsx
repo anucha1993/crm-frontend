@@ -784,7 +784,10 @@ export default function PaymentScanPage() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
-                          {payment.order.items.map((item) => (
+                          {payment.order.items.map((item) => {
+                            const hasLen = item.length != null && Number(item.length) > 0;
+                            const hasThk = item.thickness != null && Number(item.thickness) > 0;
+                            return (
                             <tr key={item.id}>
                               <td className="px-3 py-2 text-gray-800">
                                 <div className="font-medium">{item.product?.name || item.description || "-"}</div>
@@ -794,11 +797,19 @@ export default function PaymentScanPage() {
                                     {item.description && item.description !== item.product?.name ? `${item.product?.code ? " — " : ""}${item.description}` : ""}
                                   </div>
                                 )}
+                                {(hasLen || hasThk) && (
+                                  <div className="text-[11px] text-gray-500 mt-0.5">
+                                    {hasLen && <>ความยาว: {Number(item.length).toLocaleString()}</>}
+                                    {hasLen && hasThk && " · "}
+                                    {hasThk && <>ความกว้าง: {Number(item.thickness).toLocaleString()}</>}
+                                  </div>
+                                )}
                               </td>
                               <td className="px-3 py-2 text-right text-gray-600">{Number(item.quantity).toLocaleString()} {item.unit}</td>
                               <td className="px-3 py-2 text-right font-medium text-gray-800">{formatCurrency(item.amount)}</td>
                             </tr>
-                          ))}
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
