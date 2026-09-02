@@ -250,8 +250,30 @@ export default function PaymentScanPage() {
     setPayment(null);
     setOrderPending(null);
     try {
-      // Try searching by payment number
-      const data = await api.get<{ data: PaymentDetail[] }>(`/payments?search=${encodeURIComponent(query.trim())}&per_page=1`, token);
+      let searchTerm = query.trim();
+
+      // If user scanned a delivery number (DLV-...), resolve it to its order number
+      // first so we can find the related payments/slips.
+      if (/^DLV-/i.test(searchTerm)) {
+        try {
+          const dlv = await api.get<{ delivery: { order?: { order_number: string } | null } }>(
+            `/deliveries/lookup/${encodeURIComponent(searchTerm)}`,
+            token,
+          );
+          const orderNumber = dlv.delivery.order?.order_number;
+          if (!orderNumber) {
+            setError("ใบส่งของนี้ยังไม่ผูกกับคำสั่งซื้อ: " + searchTerm);
+            return;
+          }
+          searchTerm = orderNumber;
+        } catch {
+          setError("ไม่พบใบส่งของ: " + query.trim());
+          return;
+        }
+      }
+
+      // Try searching by payment number (or order number)
+      const data = await api.get<{ data: PaymentDetail[] }>(`/payments?search=${encodeURIComponent(searchTerm)}&per_page=1`, token);
       if (data.data.length === 0) {
         setError("ไม่พบรายการชำระเงินที่ตรงกับ: " + query.trim());
         return;
@@ -542,7 +564,7 @@ export default function PaymentScanPage() {
                 value={manualInput}
                 onChange={(e) => setManualInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") lookupPayment(manualInput); }}
-                placeholder="พิมพ์เลขที่ชำระเงิน หรือ เลขที่คำสั่งซื้อ..."
+                placeholder="พิมพ์เลขที่ชำระเงิน / คำสั่งซื้อ / ใบส่งของ..."
                 className="flex-1 px-3 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none"
               />
               <button
