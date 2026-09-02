@@ -228,6 +228,7 @@ export default function PaymentScanPage() {
   const [historyList, setHistoryList] = useState<PaymentListItem[]>([]);
   const [tabLoading, setTabLoading] = useState(false);
   const [revertingId, setRevertingId] = useState<number | null>(null);
+  const [slipPreview, setSlipPreview] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -688,18 +689,46 @@ export default function PaymentScanPage() {
               )}
             </div>
 
-            {/* Slip image */}
-            {payment.slip_image && (
-              <div className="bg-white rounded-xl border border-gray-200 p-5">
-                <h4 className="text-sm font-semibold text-gray-800 mb-3">สลิปการโอนเงิน</h4>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={`${apiUrl}/storage/${payment.slip_image}`}
-                  alt="Slip"
-                  className="max-w-full max-h-96 rounded-lg border border-gray-200 mx-auto"
-                />
-              </div>
-            )}
+            {/* Slip image(s) — show ALL slips for this order side-by-side when available */}
+            {(() => {
+              const orderSlips = (orderPending?.pending_payments || [])
+                .filter((p) => p.slip_image)
+                .map((p) => ({ id: p.id, url: `${apiUrl}/storage/${p.slip_image}`, label: p.payment_number }));
+              const hasOrderSlips = orderSlips.length > 0;
+              const hasSingleSlip = !hasOrderSlips && payment.slip_image;
+              if (!hasOrderSlips && !hasSingleSlip) return null;
+              return (
+                <div className="bg-white rounded-xl border border-gray-200 p-5">
+                  <h4 className="text-sm font-semibold text-gray-800 mb-3">
+                    สลิปการโอนเงิน{hasOrderSlips ? ` (${orderSlips.length} รายการ)` : ""}
+                  </h4>
+                  {hasOrderSlips ? (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {orderSlips.map((s) => (
+                        <div key={s.id} className="flex flex-col items-center gap-1">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={s.url}
+                            alt={`Slip ${s.label}`}
+                            onClick={() => setSlipPreview(s.url)}
+                            className="w-full aspect-square object-cover rounded-lg border border-gray-200 cursor-zoom-in hover:opacity-90"
+                          />
+                          <span className="text-[11px] text-gray-500 truncate w-full text-center">{s.label}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={`${apiUrl}/storage/${payment.slip_image}`}
+                      alt="Slip"
+                      onClick={() => setSlipPreview(`${apiUrl}/storage/${payment.slip_image}`)}
+                      className="max-w-full max-h-96 rounded-lg border border-gray-200 mx-auto cursor-zoom-in hover:opacity-90"
+                    />
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Order info */}
             {payment.order && (
@@ -809,7 +838,8 @@ export default function PaymentScanPage() {
                         <img
                           src={`${apiUrl}/storage/${pp.slip_image}`}
                           alt="slip"
-                          className="w-20 h-20 object-cover rounded-lg border border-gray-200 flex-shrink-0"
+                          onClick={() => setSlipPreview(`${apiUrl}/storage/${pp.slip_image}`)}
+                          className="w-20 h-20 object-cover rounded-lg border border-gray-200 flex-shrink-0 cursor-zoom-in hover:opacity-80"
                         />
                       ) : (
                         <div className="w-20 h-20 rounded-lg bg-gray-50 border border-gray-100 flex items-center justify-center text-xs text-gray-300 flex-shrink-0">ไม่มีสลิป</div>
@@ -910,6 +940,28 @@ export default function PaymentScanPage() {
           />
         )}
       </div>
+
+      {slipPreview && (
+        <div
+          onClick={() => setSlipPreview(null)}
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 cursor-zoom-out"
+        >
+          <button
+            onClick={() => setSlipPreview(null)}
+            className="absolute top-4 right-4 p-2 rounded-full bg-white/10 text-white hover:bg-white/20"
+            aria-label="ปิด"
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={slipPreview}
+            alt="Slip preview"
+            onClick={(e) => e.stopPropagation()}
+            className="max-w-full max-h-full rounded-lg shadow-2xl cursor-default"
+          />
+        </div>
+      )}
     </>
   );
 }
