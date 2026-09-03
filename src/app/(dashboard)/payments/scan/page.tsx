@@ -98,6 +98,7 @@ interface PendingByOrder {
     customer: { id: number; name: string; code: string } | null;
   };
   pending_payments: PendingPayment[];
+  payments: (PendingPayment & { status: string })[];
   pending_total: number;
 }
 
@@ -701,12 +702,25 @@ export default function PaymentScanPage() {
 
             {/* Slip image(s) — show ALL slips for this order side-by-side when available */}
             {(() => {
-              const orderSlips = (orderPending?.pending_payments || [])
+              const allPayments = orderPending?.payments || orderPending?.pending_payments || [];
+              const orderSlips = allPayments
                 .filter((p) => p.slip_image)
-                .map((p) => ({ id: p.id, url: `${apiUrl}/storage/${p.slip_image}`, label: p.payment_number }));
+                .map((p) => ({
+                  id: p.id,
+                  url: `${apiUrl}/storage/${p.slip_image}`,
+                  label: p.payment_number,
+                  status: (p as { status?: string }).status || "pending",
+                }));
               const hasOrderSlips = orderSlips.length > 0;
               const hasSingleSlip = !hasOrderSlips && payment.slip_image;
               if (!hasOrderSlips && !hasSingleSlip) return null;
+              const statusBadge = (s: string) =>
+                s === "approved"
+                  ? "bg-green-50 text-green-700 border-green-200"
+                  : s === "rejected"
+                    ? "bg-red-50 text-red-600 border-red-200"
+                    : "bg-yellow-50 text-yellow-700 border-yellow-200";
+              const statusLabel = (s: string) => (s === "approved" ? "อนุมัติ" : s === "rejected" ? "ปฏิเสธ" : "รอ");
               return (
                 <div className="bg-white rounded-xl border border-gray-200 p-5">
                   <h4 className="text-sm font-semibold text-gray-800 mb-3">
@@ -723,7 +737,10 @@ export default function PaymentScanPage() {
                             onClick={() => setSlipPreview(s.url)}
                             className="w-full aspect-square object-cover rounded-lg border border-gray-200 cursor-zoom-in hover:opacity-90"
                           />
-                          <span className="text-[11px] text-gray-500 truncate w-full text-center">{s.label}</span>
+                          <div className="flex items-center gap-1 w-full">
+                            <span className="text-[11px] text-gray-500 truncate flex-1 text-center">{s.label}</span>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded border ${statusBadge(s.status)}`}>{statusLabel(s.status)}</span>
+                          </div>
                         </div>
                       ))}
                     </div>
