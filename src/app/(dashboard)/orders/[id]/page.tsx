@@ -327,11 +327,49 @@ export default function OrderDetailPage() {
           if (total > 0) setPaymentAmount(String(total));
           return updated;
         });
+        // Duplicate (200501) slips come back with no transfer data — automatically fetch it
+        // (bypassing the duplicate check just for this second read) so the amount/sender/date
+        // still get keyed in without the user having to do anything extra.
+        if (result.code === '200501' && !result.data?.amount) {
+          await fetchSlipDetails(fileIndex, file);
+        }
       } catch {
         setSlipResults((prev) => ({ ...prev, [fileIndex]: { code: 'error', message: 'ตรวจสอบสลิปไม่สำเร็จ' } }));
       } finally {
         setSlipVerifying((prev) => ({ ...prev, [fileIndex]: false }));
       }
+    }
+  };
+
+  // Duplicate slips (200501) come back from Slip2Go with no transfer data (no amount/sender/date) —
+  // re-verify that one file with the duplicate check turned off so we can still show/autofill it.
+  const fetchSlipDetails = async (index: number, file: File) => {
+    if (!token) return;
+    setSlipVerifying((prev) => ({ ...prev, [index]: true }));
+    try {
+      const formData = new FormData();
+      formData.append('slip_image', file);
+      if (paymentAmount) formData.append('amount', paymentAmount);
+      formData.append('exclude_order_id', String(orderId));
+      formData.append('bypass_duplicate_check', '1');
+      const result = await api.upload<{ code: string; message?: string; data?: Record<string, unknown>; existing_usage?: SlipUsage[] }>('/payments/verify-slip', formData, token);
+      setSlipResults((prev) => {
+        const prevResult = prev[index];
+        // Keep the original duplicate code/message so the "สลิปซ้ำ" badge stays visible,
+        // only merge in the newly fetched transfer details.
+        const merged = { ...prevResult, data: result.data, existing_usage: result.existing_usage };
+        const updated = { ...prev, [index]: merged };
+        const total = Object.values(updated).reduce((sum, r) => {
+          const amt = r?.data?.amount ? Number(r.data.amount) : 0;
+          return sum + amt;
+        }, 0);
+        if (total > 0) setPaymentAmount(String(total));
+        return updated;
+      });
+    } catch {
+      // silent — the manual retry button below covers this case
+    } finally {
+      setSlipVerifying((prev) => ({ ...prev, [index]: false }));
     }
   };
 
@@ -1462,6 +1500,19 @@ export default function OrderDetailPage() {
                                     )}
                                     {info.label}
                                   </div>
+                                  {isDuplicate && !verifying && !d?.amount && (
+                                    <div className="mt-1.5">
+                                      <p className="text-xs text-blue-700/90">ดึงรายละเอียดยอดโอน/ผู้โอนอัตโนมัติไม่สำเร็จ — ลองใหม่ หรือกรอกจำนวนเงินเองด้านล่าง</p>
+                                      <button
+                                        type="button"
+                                        onClick={() => fetchSlipDetails(idx, file)}
+                                        disabled={verifying}
+                                        className="mt-1 px-2.5 py-1 text-xs font-medium rounded-lg border border-blue-300 bg-white text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+                                      >
+                                        ลองดึงรายละเอียดสลิปอีกครั้ง
+                                      </button>
+                                    </div>
+                                  )}
                                   {d && (
                                     <div className="mt-1 space-y-0.5 text-xs text-gray-700">
                                       {d.dateTime && <div><span className="text-gray-500">วันที่โอน:</span> {formatDate(d.dateTime)}</div>}
