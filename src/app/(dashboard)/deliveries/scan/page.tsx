@@ -34,6 +34,8 @@ interface DeliveryLookup {
   status: string;
   delivery_date: string;
   delivered_at: string | null;
+  note_returned_at?: string | null;
+  noteReturnedBy?: { id: number; name: string } | null;
   total_weight: string;
   suggested_vehicle: string | null;
   items: {
@@ -95,15 +97,38 @@ interface DailySummary {
   };
 }
 
+// Note-return reconciliation types (physical delivery notes brought back to office)
+interface NoteReturnDelivery {
+  id: number;
+  delivery_number: string;
+  status: string;
+  order_number: string | null;
+  customer_name: string | null;
+  delivered_at: string | null;
+  deliverer: { id: number; name: string } | null;
+  note_returned_at: string | null;
+  note_returned_by: { id: number; name: string } | null;
+}
+interface NoteReturnSummary {
+  date: string;
+  summary: { total: number; returned: number; missing: number };
+  returned_deliveries: NoteReturnDelivery[];
+  missing_deliveries: NoteReturnDelivery[];
+}
+
 export default function DeliveryScanPage() {
   const { token, hasPermission } = useAuth();
   const searchParams = useSearchParams();
   const router = useRouter();
 
   // Tabs: default to "scan"; switch to "daily" when ?view=daily or ?date=... is present.
-  const initialView: "scan" | "daily" =
-    searchParams.get("view") === "daily" || searchParams.get("date") ? "daily" : "scan";
-  const [view, setView] = useState<"scan" | "daily">(initialView);
+  const initialView: "scan" | "daily" | "returnNote" =
+    searchParams.get("view") === "daily" || searchParams.get("date")
+      ? "daily"
+      : searchParams.get("view") === "returnNote"
+      ? "returnNote"
+      : "scan";
+  const [view, setView] = useState<"scan" | "daily" | "returnNote">(initialView);
 
   const [delivery, setDelivery] = useState<DeliveryLookup | null>(null);
   const [loading, setLoading] = useState(false);
@@ -121,6 +146,13 @@ export default function DeliveryScanPage() {
   );
   const [dailyData, setDailyData] = useState<DailySummary | null>(null);
   const [dailyLoading, setDailyLoading] = useState(false);
+
+  // Note-return state (scan to mark the physical delivery note as received back at the office)
+  const [noteReturnLoading, setNoteReturnLoading] = useState(false);
+  const [noteReturnConfirmed, setNoteReturnConfirmed] = useState(false);
+  const [returnDate, setReturnDate] = useState<string>(new Date().toISOString().split("T")[0]);
+  const [returnSummary, setReturnSummary] = useState<NoteReturnSummary | null>(null);
+  const [returnSummaryLoading, setReturnSummaryLoading] = useState(false);
 
   // Sales-only users must NOT see grand totals / cumulative order amounts.
   // (renamed from role-based check to permission-based)
@@ -146,6 +178,7 @@ export default function DeliveryScanPage() {
     setError("");
     setDelivery(null);
     setConfirmed(false);
+    setNoteReturnConfirmed(false);
     try {
       const data = await api.get<{ delivery: DeliveryLookup }>(`/deliveries/lookup/${encodeURIComponent(deliveryNumber.trim())}`, token || "");
       setDelivery(data.delivery);
@@ -239,6 +272,30 @@ export default function DeliveryScanPage() {
     setDailyDate(d.toISOString().split("T")[0]);
   };
 
+  // Note-return summary fetch
+  const fetchReturnSummary = useCallback(async () => {
+    if (!token) return;
+    setReturnSummaryLoading(true);
+    try {
+      const res = await api.get<NoteReturnSummary>(`/deliveries/note-return-summary?date=${returnDate}`, token);
+      setReturnSummary(res);
+    } catch {
+      setReturnSummary(null);
+    } finally {
+      setReturnSummaryLoading(false);
+    }
+  }, [token, returnDate]);
+
+  useEffect(() => {
+    if (view === "returnNote") fetchReturnSummary();
+  }, [view, fetchReturnSummary]);
+
+  const shiftReturnDay = (delta: number) => {
+    const d = new Date(returnDate);
+    d.setDate(d.getDate() + delta);
+    setReturnDate(d.toISOString().split("T")[0]);
+  };
+
   const fmt = (v: number | string) =>
     Number(v).toLocaleString("th-TH", { minimumFractionDigits: 2 });
 
@@ -264,6 +321,22 @@ export default function DeliveryScanPage() {
       const data = await api.get<{ delivery: DeliveryLookup }>(`/deliveries/lookup/${encodeURIComponent(delivery.delivery_number)}`, token);
       setDelivery(data.delivery);
     } catch { /* noop */ }
+  };
+
+  const handleConfirmNoteReturn = async () => {
+    if (!token || !delivery) return;
+    setNoteReturnLoading(true);
+    try {
+      await api.post(`/deliveries/${delivery.id}/confirm-note-return`, {}, token);
+      setNoteReturnConfirmed(true);
+      const data = await api.get<{ delivery: DeliveryLookup }>(`/deliveries/lookup/${encodeURIComponent(delivery.delivery_number)}`, token);
+      setDelivery(data.delivery);
+      fetchReturnSummary();
+    } catch (err) {
+      alert(err instanceof ApiError ? err.message : "เกิดข้อผิดพลาด");
+    } finally {
+      setNoteReturnLoading(false);
+    }
   };
 
   const handleApproveSlip = async (paymentId: number) => {
@@ -321,7 +394,188 @@ export default function DeliveryScanPage() {
           >
             สรุปยอดชำระรายวัน
           </button>
+          <button
+            onClick={() => { setView("returnNote"); router.replace("/deliveries/scan?view=returnNote"); }}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              view === "returnNote" ? "border-green-500 text-green-700" : "border-transparent text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            รับคืนใบส่งของ
+          </button>
         </div>
+
+        {view === "returnNote" && (
+          <>
+            {/* Date picker */}
+            <div className="bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-2">
+              <button onClick={() => shiftReturnDay(-1)} className="px-3 py-2 text-sm rounded-lg border border-gray-200 hover:bg-gray-50">‹ ก่อนหน้า</button>
+              <input
+                type="date"
+                value={returnDate}
+                onChange={(e) => setReturnDate(e.target.value)}
+                className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none"
+              />
+              <button onClick={() => shiftReturnDay(1)} className="px-3 py-2 text-sm rounded-lg border border-gray-200 hover:bg-gray-50">ถัดไป ›</button>
+              <button onClick={() => setReturnDate(new Date().toISOString().split("T")[0])} className="ml-auto px-3 py-2 text-sm rounded-lg bg-green-100 text-green-700 hover:bg-green-200">วันนี้</button>
+            </div>
+
+            {/* Counts */}
+            <div className="grid grid-cols-3 gap-4">
+              <div className="bg-white rounded-xl border border-gray-200 p-5">
+                <p className="text-xs text-gray-500 mb-1">ใบส่งของทั้งหมด</p>
+                <p className="text-2xl font-bold text-gray-800">{returnSummary?.summary.total ?? "-"}</p>
+              </div>
+              <div className="bg-white rounded-xl border border-gray-200 p-5">
+                <p className="text-xs text-gray-500 mb-1">ได้รับคืนแล้ว</p>
+                <p className="text-2xl font-bold text-green-600">{returnSummary?.summary.returned ?? "-"}</p>
+              </div>
+              <div className="bg-white rounded-xl border border-gray-200 p-5">
+                <p className="text-xs text-gray-500 mb-1">ยังไม่ได้รับคืน</p>
+                <p className="text-2xl font-bold text-red-600">{returnSummary?.summary.missing ?? "-"}</p>
+              </div>
+            </div>
+
+            {/* Scanner to mark a note as returned */}
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                <h3 className="font-semibold text-gray-800">สแกน QR รับใบส่งของคืน</h3>
+                <button
+                  onClick={scanning ? stopScanning : startScanning}
+                  className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${scanning ? "bg-red-100 text-red-700 hover:bg-red-200" : "bg-green-100 text-green-700 hover:bg-green-200"}`}
+                >
+                  {scanning ? "ปิดกล้อง" : "เปิดกล้อง"}
+                </button>
+              </div>
+              <div className="p-5">
+                {scanning && (
+                  <div className="relative rounded-lg overflow-hidden mb-4 bg-black">
+                    <video ref={videoRef} className="w-full" playsInline muted />
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <div className="w-48 h-48 border-2 border-green-400 rounded-xl opacity-50" />
+                    </div>
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="พิมพ์เลขที่ใบส่งของ..."
+                    value={manualInput}
+                    onChange={(e) => setManualInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") lookupDelivery(manualInput); }}
+                    className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none"
+                  />
+                  <button
+                    onClick={() => lookupDelivery(manualInput)}
+                    disabled={loading || !manualInput.trim()}
+                    className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+                  >
+                    ค้นหา
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {loading && (
+              <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
+                <svg className="animate-spin w-8 h-8 text-green-600 mx-auto mb-2" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                <p className="text-gray-500">กำลังค้นหา...</p>
+              </div>
+            )}
+
+            {error && (
+              <div className="bg-red-50 border border-red-200 rounded-xl p-5 text-center">
+                <p className="text-red-600">{error}</p>
+              </div>
+            )}
+
+            {noteReturnConfirmed && (
+              <div className="bg-green-50 border border-green-200 rounded-xl p-5 text-center">
+                <svg className="w-12 h-12 text-green-600 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <p className="text-green-700 font-semibold text-lg">รับใบส่งของคืนเรียบร้อย!</p>
+              </div>
+            )}
+
+            {delivery && !loading && (
+              <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                <div className="px-5 py-4 border-b border-gray-100">
+                  <h3 className="font-semibold text-gray-800">{delivery.delivery_number}</h3>
+                  {delivery.order && <p className="text-xs text-gray-500 mt-0.5">คำสั่งซื้อ: {delivery.order.order_number}</p>}
+                  <p className="text-xs text-gray-500 mt-0.5">ลูกค้า: {delivery.customer?.name || "-"}</p>
+                </div>
+                <div className="p-5 space-y-3">
+                  {delivery.note_returned_at ? (
+                    <div className="text-center py-3 bg-green-50 border border-green-200 rounded-lg">
+                      <p className="text-green-700 font-medium">✓ รับใบส่งของคืนแล้ว</p>
+                      <p className="text-xs text-green-600 mt-1">
+                        {new Date(delivery.note_returned_at).toLocaleString("th-TH")}
+                        {delivery.noteReturnedBy && ` · โดย ${delivery.noteReturnedBy.name}`}
+                      </p>
+                    </div>
+                  ) : canConfirmDelivery ? (
+                    <button
+                      onClick={handleConfirmNoteReturn}
+                      disabled={noteReturnLoading}
+                      className="w-full py-3 text-sm font-semibold bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+                    >
+                      {noteReturnLoading ? "กำลังยืนยัน..." : "📥 ยืนยันรับใบส่งของคืน"}
+                    </button>
+                  ) : (
+                    <div className="w-full py-3 text-center text-sm text-gray-400 italic border border-dashed border-gray-200 rounded-lg">
+                      ไม่มีสิทธิ์ยืนยันรับใบส่งของคืน (ต้อง role ที่มีสิทธิ์ deliveries.confirm)
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Missing notes list */}
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <div className="px-5 py-4 border-b border-gray-100">
+                <h3 className="font-semibold text-gray-800">ใบส่งของที่ยังไม่ได้รับคืน</h3>
+              </div>
+              {returnSummaryLoading ? (
+                <div className="p-8 text-center text-gray-400">กำลังโหลด...</div>
+              ) : !returnSummary || returnSummary.missing_deliveries.length === 0 ? (
+                <div className="p-8 text-center text-gray-400">ได้รับใบส่งของคืนครบแล้ว</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-gray-50 border-b border-gray-100 text-gray-500">
+                        <th className="text-left px-4 py-3 font-medium">เลขที่ใบส่งของ</th>
+                        <th className="text-left px-4 py-3 font-medium">คำสั่งซื้อ / ลูกค้า</th>
+                        <th className="text-left px-4 py-3 font-medium">สถานะจัดส่ง</th>
+                        <th className="text-left px-4 py-3 font-medium">คนขับ</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {returnSummary.missing_deliveries.map((d) => (
+                        <tr key={d.id} className="hover:bg-gray-50">
+                          <td className="px-4 py-3">
+                            <Link href={`/deliveries/${d.id}`} className="font-mono font-medium text-blue-600 hover:underline">{d.delivery_number}</Link>
+                          </td>
+                          <td className="px-4 py-3">
+                            <p className="font-mono text-gray-600">{d.order_number || "-"}</p>
+                            <p className="text-gray-600">{d.customer_name || "-"}</p>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${(STATUS_MAP[d.status] || STATUS_MAP.pending).color}`}>{(STATUS_MAP[d.status] || STATUS_MAP.pending).label}</span>
+                          </td>
+                          <td className="px-4 py-3 text-gray-600">{d.deliverer?.name || "-"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </>
+        )}
 
         {view === "scan" && (<>
         {/* Scanner */}

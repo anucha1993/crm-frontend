@@ -101,6 +101,7 @@ const navItems: NavItem[] = [
     children: [
       { href: "/deliveries/status-calendar", label: "ปฏิทิน (จัดส่ง & ตามเก็บเงิน)" },
       { href: "/deliveries/scan", label: "สแกน QR / สรุปยอดชำระรายวัน" },
+      { href: "/deliveries/scan?view=returnNote", label: "รับคืนใบส่งของ" },
       { href: "/deliveries", label: "ทั้งหมด" },
       { href: "/deliveries?status=pending", label: "รอจัดส่ง" },
       { href: "/deliveries?status=delivering", label: "กำลังจัดส่ง" },
