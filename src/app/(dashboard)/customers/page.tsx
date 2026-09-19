@@ -22,6 +22,7 @@ interface Customer {
   id: number;
   code: string;
   type: "regular" | "general";
+  is_credit: boolean;
   customer_level_id: number | null;
   level: CustomerLevel | null;
   name: string;
@@ -55,6 +56,7 @@ const CUSTOMER_TYPES = [
 const emptyForm = {
   name: "",
   type: "general",
+  is_credit: false,
   customer_level_id: "",
   tax_id: "",
   contact_name: "",
@@ -136,6 +138,7 @@ export default function CustomersPage() {
     setForm({
       name: c.name,
       type: c.type,
+      is_credit: c.is_credit || false,
       customer_level_id: c.customer_level_id?.toString() || "",
       tax_id: c.tax_id || "",
       contact_name: c.contact_name || "",
@@ -154,6 +157,7 @@ export default function CustomersPage() {
       const payload = {
         name: form.name,
         type: form.type,
+        is_credit: form.is_credit,
         customer_level_id: form.customer_level_id || null,
         tax_id: form.tax_id || null,
         contact_name: form.contact_name || null,
@@ -189,7 +193,7 @@ export default function CustomersPage() {
     }
   };
 
-  const updateForm = (field: string, value: string) => {
+  const updateForm = (field: string, value: string | boolean) => {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
@@ -306,9 +310,16 @@ export default function CustomersPage() {
                           {c.tax_id && <div className="text-xs text-gray-400 mt-0.5">เลขผู้เสียภาษี: {c.tax_id}</div>}
                         </td>
                         <td className="px-5 py-4">
-                          <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${c.type === "regular" ? "bg-blue-50 text-blue-700" : "bg-gray-100 text-gray-600"}`}>
-                            {c.type === "regular" ? "ลูกค้าประจำ" : "ลูกค้าทั่วไป"}
-                          </span>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${c.type === "regular" ? "bg-blue-50 text-blue-700" : "bg-gray-100 text-gray-600"}`}>
+                              {c.type === "regular" ? "ลูกค้าประจำ" : "ลูกค้าทั่วไป"}
+                            </span>
+                            {c.is_credit && (
+                              <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-purple-50 text-purple-700" title="ออกใบกำกับภาษีได้โดยไม่ต้องรอชำระเงินครบ">
+                                เครดิต
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="px-5 py-4">
                           {c.level ? (
@@ -418,6 +429,12 @@ export default function CustomersPage() {
                       <option key={l.id} value={l.id}>{l.name}</option>
                     ))}
                   </select>
+                </div>
+                <div className="col-span-2 flex items-center gap-2 -mt-1">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={form.is_credit} onChange={(e) => updateForm("is_credit", e.target.checked)} className="w-4 h-4 rounded border-gray-300 text-green-600 focus:ring-green-500" />
+                    <span className="text-sm text-gray-700">ลูกค้าเครดิต — ออกใบกำกับภาษี/บิลได้โดยไม่ต้องรอชำระเงินครบ</span>
+                  </label>
                 </div>
                 <div>
                   <label className={labelClass}>เลขประจำตัวผู้เสียภาษี</label>

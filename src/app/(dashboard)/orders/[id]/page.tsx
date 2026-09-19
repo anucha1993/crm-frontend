@@ -82,7 +82,7 @@ interface Order {
   id: number;
   order_number: string;
   quotation: { id: number; quotation_number: string } | null;
-  customer: { id: number; name: string; code: string; pocket_money: string } | null;
+  customer: { id: number; name: string; code: string; pocket_money: string; is_credit?: boolean } | null;
   shipping_address: { id: number; label: string | null; contact_name: string | null; phone: string | null; address: string } | null;
   status: string;
   delivery_status: string;
@@ -1253,7 +1253,7 @@ export default function OrderDetailPage() {
               <div className="bg-white rounded-xl border border-gray-200">
                 <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
                   <h3 className="text-sm font-semibold text-gray-800">{invoiceLabel}</h3>
-                  {order.status !== "cancelled" && Number(order.remaining_amount) === 0 && !order.invoices?.some(inv => inv.status === "issued") && (
+                  {order.status !== "cancelled" && (Number(order.remaining_amount) === 0 || order.customer?.is_credit) && !order.invoices?.some(inv => inv.status === "issued") && (
                     <button onClick={handleCreateInvoice} disabled={invoiceCreating} className="flex items-center gap-1 px-3 py-1.5 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50">
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
                       {invoiceCreating ? "กำลังออก..." : invoiceVerb}
@@ -1261,7 +1261,13 @@ export default function OrderDetailPage() {
                   )}
                 </div>
 
-                {Number(order.remaining_amount) > 0 && (
+                {Number(order.remaining_amount) > 0 && order.customer?.is_credit && (
+                  <div className="px-5 py-3 bg-purple-50 border-b border-purple-100">
+                    <p className="text-sm text-purple-700">ℹ️ ลูกค้าเครดิต — {invoiceVerb}ได้โดยไม่ต้องรอชำระเงินครบ (คงเหลือ {formatCurrency(order.remaining_amount)} บาท)</p>
+                  </div>
+                )}
+
+                {Number(order.remaining_amount) > 0 && !order.customer?.is_credit && (
                   <div className="px-5 py-3 bg-yellow-50 border-b border-yellow-100">
                     <p className="text-sm text-yellow-700">⚠️ ต้องชำระเงินครบก่อนจึงจะ{invoiceVerb}ได้ (คงเหลือ {formatCurrency(order.remaining_amount)} บาท)</p>
                   </div>

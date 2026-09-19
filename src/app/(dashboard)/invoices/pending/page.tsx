@@ -8,9 +8,10 @@ import { api } from "@/lib/api";
 interface PendingRow {
   order_id: number;
   order_number: string;
-  customer: { id: number; code: string; name: string; tax_id: string | null; phone: string | null } | null;
+  customer: { id: number; code: string; name: string; tax_id: string | null; phone: string | null; is_credit?: boolean } | null;
   total: number;
   paid_amount: number;
+  remaining_amount: number;
   last_paid_at: string | null;
   invoice_issued: boolean;
   invoice: { id: number; invoice_number: string; issue_date: string } | null;
@@ -109,7 +110,7 @@ export default function PendingInvoicesPage() {
         {/* Summary cards */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <div className="text-xs text-gray-500 mb-1">ทั้งหมด (โอนครบแล้ว)</div>
+            <div className="text-xs text-gray-500 mb-1">ทั้งหมด (โอนครบแล้ว/ลูกค้าเครดิต)</div>
             <div className="text-2xl font-bold text-gray-800">{summary.total}</div>
           </div>
           <div className="bg-white rounded-xl border border-gray-200 p-4">
@@ -193,8 +194,16 @@ export default function PendingInvoicesPage() {
                         </button>
                       </td>
                       <td className="px-5 py-4">
-                        <div className="font-medium text-gray-800">{r.customer?.name || "-"}</div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-medium text-gray-800">{r.customer?.name || "-"}</span>
+                          {r.customer?.is_credit && (
+                            <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-50 text-purple-700" title="ลูกค้าเครดิต">เครดิต</span>
+                          )}
+                        </div>
                         <div className="text-xs text-gray-400">{r.customer?.code}{r.customer?.tax_id ? ` · ${r.customer.tax_id}` : ""}</div>
+                        {r.remaining_amount > 0 && (
+                          <div className="text-xs text-red-600 mt-0.5">คงเหลือ {formatCurrency(r.remaining_amount)} บาท</div>
+                        )}
                       </td>
                       <td className="px-5 py-4 text-right font-medium text-gray-800">{formatCurrency(r.total)}</td>
                       <td className="px-5 py-4">
