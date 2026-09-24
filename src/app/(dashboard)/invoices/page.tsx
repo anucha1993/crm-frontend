@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import Header from "@/components/Header";
 import { useAuth } from "@/lib/auth-context";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 
 interface Invoice {
   id: number;
@@ -39,6 +39,12 @@ export default function InvoicesPage() {
   const [total, setTotal] = useState(0);
 
   const canViewAll = hasPermission("records.view_all");
+  const canEdit = hasPermission("invoices.create");
+
+  const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
+  const [editIssueDate, setEditIssueDate] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState("");
 
   const fetchInvoices = useCallback(async () => {
     if (!token) return;
@@ -78,6 +84,27 @@ export default function InvoicesPage() {
   const handlePrint = (invoiceId: number) => {
     if (!token) return;
     window.open(`${process.env.NEXT_PUBLIC_API_URL}/invoices/${invoiceId}/pdf?token=${token}`, '_blank');
+  };
+
+  const openEditDate = (inv: Invoice) => {
+    setEditingInvoice(inv);
+    setEditIssueDate(inv.issue_date.slice(0, 10));
+    setEditError("");
+  };
+
+  const handleSaveIssueDate = async () => {
+    if (!token || !editingInvoice) return;
+    setEditSaving(true);
+    setEditError("");
+    try {
+      await api.put(`/invoices/${editingInvoice.id}`, { issue_date: editIssueDate }, token);
+      setEditingInvoice(null);
+      fetchInvoices();
+    } catch (err) {
+      setEditError(err instanceof ApiError ? err.message : "เกิดข้อผิดพลาด");
+    } finally {
+      setEditSaving(false);
+    }
   };
 
   return (
@@ -173,9 +200,16 @@ export default function InvoicesPage() {
                         <td className="px-5 py-4 text-right font-medium text-gray-800">{formatCurrency(inv.total)}</td>
                         <td className="px-5 py-4 text-gray-500 text-xs">{inv.creator?.name || "-"}</td>
                         <td className="px-5 py-4 text-right">
-                          <button onClick={() => handlePrint(inv.id)} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="พิมพ์ PDF">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
-                          </button>
+                          <div className="flex items-center justify-end gap-1">
+                            {canEdit && inv.status !== "cancelled" && (
+                              <button onClick={() => openEditDate(inv)} className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors" title="แก้ไขวันที่ออก">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                              </button>
+                            )}
+                            <button onClick={() => handlePrint(inv.id)} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="พิมพ์ PDF">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -209,6 +243,35 @@ export default function InvoicesPage() {
           )}
         </div>
       </div>
+
+      {/* Edit issue-date modal */}
+      {editingInvoice && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm">
+            <div className="px-5 py-4 border-b border-gray-200">
+              <h3 className="font-semibold text-gray-800">แก้ไขวันที่ออก{docLabel}</h3>
+              <p className="text-sm text-gray-500 mt-1">{editingInvoice.invoice_number}</p>
+            </div>
+            <div className="p-5">
+              {editError && <div className="bg-red-50 text-red-600 text-sm px-3 py-2 rounded-lg mb-3">{editError}</div>}
+              <label className="block text-sm font-medium text-gray-700 mb-1">วันที่ออก</label>
+              <input
+                type="date"
+                value={editIssueDate}
+                max={new Date().toISOString().split("T")[0]}
+                onChange={(e) => setEditIssueDate(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none text-sm"
+              />
+            </div>
+            <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-200">
+              <button onClick={() => setEditingInvoice(null)} className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">ยกเลิก</button>
+              <button onClick={handleSaveIssueDate} disabled={editSaving || !editIssueDate} className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50">
+                {editSaving ? "กำลังบันทึก..." : "บันทึก"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

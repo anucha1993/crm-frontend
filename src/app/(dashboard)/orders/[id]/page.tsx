@@ -227,6 +227,8 @@ export default function OrderDetailPage() {
 
   // Invoice
   const [invoiceCreating, setInvoiceCreating] = useState(false);
+  const [showInvoiceDateModal, setShowInvoiceDateModal] = useState(false);
+  const [invoiceIssueDate, setInvoiceIssueDate] = useState("");
   const [cancellingInvoice, setCancellingInvoice] = useState<OrderInvoice | null>(null);
   const [cancelInvoiceReason, setCancelInvoiceReason] = useState("");
 
@@ -612,10 +614,10 @@ export default function OrderDetailPage() {
 
   const handleCreateInvoice = async () => {
     if (!token || !order) return;
-    if (!confirm(`ต้องการ${invoiceVerb}สำหรับคำสั่งซื้อนี้?`)) return;
     setInvoiceCreating(true);
     try {
-      await api.post(`/orders/${order.id}/invoices`, {}, token);
+      await api.post(`/orders/${order.id}/invoices`, { issue_date: invoiceIssueDate || undefined }, token);
+      setShowInvoiceDateModal(false);
       fetchOrder();
       fetchTimeline();
     } catch (err) {
@@ -1254,7 +1256,11 @@ export default function OrderDetailPage() {
                 <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
                   <h3 className="text-sm font-semibold text-gray-800">{invoiceLabel}</h3>
                   {order.status !== "cancelled" && (Number(order.remaining_amount) === 0 || order.customer?.is_credit) && !order.invoices?.some(inv => inv.status === "issued") && (
-                    <button onClick={handleCreateInvoice} disabled={invoiceCreating} className="flex items-center gap-1 px-3 py-1.5 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50">
+                    <button
+                      onClick={() => { setInvoiceIssueDate(new Date().toISOString().split("T")[0]); setShowInvoiceDateModal(true); }}
+                      disabled={invoiceCreating}
+                      className="flex items-center gap-1 px-3 py-1.5 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+                    >
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
                       {invoiceCreating ? "กำลังออก..." : invoiceVerb}
                     </button>
@@ -1930,6 +1936,34 @@ export default function OrderDetailPage() {
               <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-200">
                 <button onClick={() => setCancellingInvoice(null)} className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">ยกเลิก</button>
                 <button onClick={handleCancelInvoice} disabled={!cancelInvoiceReason.trim()} className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50">ยืนยันยกเลิก</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Invoice issue-date modal */}
+        {showInvoiceDateModal && (
+          <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-xl shadow-xl w-full max-w-sm">
+              <div className="px-5 py-4 border-b border-gray-200">
+                <h3 className="font-semibold text-gray-800">{invoiceVerb}</h3>
+                <p className="text-sm text-gray-500 mt-1">{order?.order_number}</p>
+              </div>
+              <div className="p-5">
+                <label className="block text-sm font-medium text-gray-700 mb-1">วันที่ออก{invoiceLabel}</label>
+                <input
+                  type="date"
+                  value={invoiceIssueDate}
+                  max={new Date().toISOString().split("T")[0]}
+                  onChange={(e) => setInvoiceIssueDate(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none text-sm"
+                />
+              </div>
+              <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-200">
+                <button onClick={() => setShowInvoiceDateModal(false)} className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">ยกเลิก</button>
+                <button onClick={handleCreateInvoice} disabled={invoiceCreating || !invoiceIssueDate} className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50">
+                  {invoiceCreating ? "กำลังออก..." : "ยืนยันออก" + invoiceLabel}
+                </button>
               </div>
             </div>
           </div>
