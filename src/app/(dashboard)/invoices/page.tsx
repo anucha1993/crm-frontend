@@ -5,10 +5,12 @@ import { useSearchParams } from "next/navigation";
 import Header from "@/components/Header";
 import { useAuth } from "@/lib/auth-context";
 import { api, ApiError } from "@/lib/api";
+import { invoiceDisplayNumber } from "@/components/InvoiceNumberField";
 
 interface Invoice {
   id: number;
-  invoice_number: string;
+  invoice_number: string | null;
+  cancelled_invoice_number: string | null;
   status: string;
   issue_date: string;
   total: string;
@@ -39,10 +41,13 @@ export default function InvoicesPage() {
   const [total, setTotal] = useState(0);
 
   const canViewAll = hasPermission("records.view_all");
-  const canEdit = hasPermission("invoices.create");
+  const canEditDate = hasPermission("invoices.create");
+  const canEditNumber = hasPermission("invoices.edit_number");
+  const canEdit = canEditDate || canEditNumber;
 
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
   const [editIssueDate, setEditIssueDate] = useState("");
+  const [editNumber, setEditNumber] = useState("");
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState("");
 
@@ -89,6 +94,7 @@ export default function InvoicesPage() {
   const openEditDate = (inv: Invoice) => {
     setEditingInvoice(inv);
     setEditIssueDate(inv.issue_date.slice(0, 10));
+    setEditNumber(inv.invoice_number || "");
     setEditError("");
   };
 
@@ -97,7 +103,10 @@ export default function InvoicesPage() {
     setEditSaving(true);
     setEditError("");
     try {
-      await api.put(`/invoices/${editingInvoice.id}`, { issue_date: editIssueDate }, token);
+      const body: { issue_date?: string; invoice_number?: string } = {};
+      if (canEditDate) body.issue_date = editIssueDate;
+      if (canEditNumber) body.invoice_number = editNumber.trim();
+      await api.put(`/invoices/${editingInvoice.id}`, body, token);
       setEditingInvoice(null);
       fetchInvoices();
     } catch (err) {
@@ -177,7 +186,7 @@ export default function InvoicesPage() {
                     return (
                       <tr key={inv.id} className="hover:bg-gray-50 transition-colors">
                         <td className="px-5 py-4">
-                          <span className="font-mono text-xs text-gray-700">{inv.invoice_number}</span>
+                          <span className={`font-mono text-xs ${inv.status === "cancelled" ? "text-gray-400 line-through" : "text-gray-700"}`}>{invoiceDisplayNumber(inv)}</span>
                         </td>
                         <td className="px-5 py-4">
                           {inv.order ? (
@@ -202,7 +211,7 @@ export default function InvoicesPage() {
                         <td className="px-5 py-4 text-right">
                           <div className="flex items-center justify-end gap-1">
                             {canEdit && inv.status !== "cancelled" && (
-                              <button onClick={() => openEditDate(inv)} className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors" title="แก้ไขวันที่ออก">
+                              <button onClick={() => openEditDate(inv)} className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors" title="แก้ไขเลขที่ / วันที่ออก">
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                               </button>
                             )}
@@ -244,28 +253,45 @@ export default function InvoicesPage() {
         </div>
       </div>
 
-      {/* Edit issue-date modal */}
+      {/* Edit invoice number / issue-date modal */}
       {editingInvoice && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-sm">
             <div className="px-5 py-4 border-b border-gray-200">
-              <h3 className="font-semibold text-gray-800">แก้ไขวันที่ออก{docLabel}</h3>
+              <h3 className="font-semibold text-gray-800">แก้ไข{docLabel}</h3>
               <p className="text-sm text-gray-500 mt-1">{editingInvoice.invoice_number}</p>
             </div>
             <div className="p-5">
               {editError && <div className="bg-red-50 text-red-600 text-sm px-3 py-2 rounded-lg mb-3">{editError}</div>}
-              <label className="block text-sm font-medium text-gray-700 mb-1">วันที่ออก</label>
-              <input
-                type="date"
-                value={editIssueDate}
-                max={new Date().toISOString().split("T")[0]}
-                onChange={(e) => setEditIssueDate(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none text-sm"
-              />
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">เลขที่{docLabel}</label>
+                  <input
+                    type="text"
+                    value={editNumber}
+                    readOnly={!canEditNumber}
+                    maxLength={50}
+                    onChange={(e) => setEditNumber(e.target.value.toUpperCase())}
+                    className={`w-full px-3 py-2 rounded-lg border border-gray-300 font-mono text-sm outline-none ${canEditNumber ? "focus:ring-2 focus:ring-green-500 focus:border-green-500" : "bg-gray-50 text-gray-500"}`}
+                  />
+                  {!canEditNumber && <p className="text-xs text-gray-400 mt-1">ไม่มีสิทธิ์แก้ไขเลขที่</p>}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">วันที่ออก</label>
+                  <input
+                    type="date"
+                    value={editIssueDate}
+                    readOnly={!canEditDate}
+                    max={new Date().toISOString().split("T")[0]}
+                    onChange={(e) => setEditIssueDate(e.target.value)}
+                    className={`w-full px-3 py-2 rounded-lg border border-gray-300 outline-none text-sm ${canEditDate ? "focus:ring-2 focus:ring-green-500 focus:border-green-500" : "bg-gray-50 text-gray-500"}`}
+                  />
+                </div>
+              </div>
             </div>
             <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-200">
               <button onClick={() => setEditingInvoice(null)} className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">ยกเลิก</button>
-              <button onClick={handleSaveIssueDate} disabled={editSaving || !editIssueDate} className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50">
+              <button onClick={handleSaveIssueDate} disabled={editSaving || !editIssueDate || (canEditNumber && !editNumber.trim())} className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50">
                 {editSaving ? "กำลังบันทึก..." : "บันทึก"}
               </button>
             </div>

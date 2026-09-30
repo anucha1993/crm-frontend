@@ -5,10 +5,12 @@ import Header from "@/components/Header";
 import { useAuth } from "@/lib/auth-context";
 import { api } from "@/lib/api";
 import { exportToExcel } from "@/lib/export-excel";
+import { invoiceDisplayNumber } from "@/components/InvoiceNumberField";
 
 interface InvoiceItem {
   id: number;
-  invoice_number: string;
+  invoice_number: string | null;
+  cancelled_invoice_number: string | null;
   order_id: number;
   customer_id: number;
   order: { id: number; order_number: string; customer: { id: number; name: string; code: string } | null } | null;
@@ -76,7 +78,7 @@ export default function InvoiceReportPage() {
               onClick={() => {
                 if (!data) return;
                 const exportData = filteredInvoices.map((inv) => ({
-                  invoice_number: inv.invoice_number,
+                  invoice_number: invoiceDisplayNumber(inv),
                   order_number: inv.order?.order_number || '-',
                   customer_name: inv.order?.customer?.name || '-',
                   total: inv.total,
@@ -179,7 +181,7 @@ export default function InvoiceReportPage() {
                 <tbody className="divide-y divide-gray-100">
                   {filteredInvoices.map((inv) => (
                     <tr key={inv.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-2.5 font-medium text-green-700">{inv.invoice_number}</td>
+                      <td className="px-4 py-2.5 font-medium text-green-700">{invoiceDisplayNumber(inv)}</td>
                       <td className="px-4 py-2.5 text-gray-600">{inv.order?.order_number || '-'}</td>
                       <td className="px-4 py-2.5">{inv.order?.customer?.name || '-'}</td>
                       <td className="px-4 py-2.5 text-right font-medium">฿{fmt(inv.total)}</td>

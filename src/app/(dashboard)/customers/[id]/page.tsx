@@ -7,6 +7,7 @@ import Header from "@/components/Header";
 import { useAuth } from "@/lib/auth-context";
 import { api, ApiError } from "@/lib/api";
 import { exportMultiSheetExcel } from "@/lib/export-excel";
+import { invoiceDisplayNumber } from "@/components/InvoiceNumberField";
 
 type StatusMap = Record<string, { label: string; color: string }>;
 
@@ -28,7 +29,7 @@ interface CustomerInfo {
 interface Quotation { id: number; account_type: string; quotation_number: string; status: string; total: string; created_at: string; }
 interface Order { id: number; account_type: string; order_number: string; quotation_id: number | null; status: string; delivery_status: string; total: string; paid_amount: string; remaining_amount: string; created_at: string; }
 interface Delivery { id: number; account_type: string; delivery_number: string; order_id: number | null; status: string; delivery_date: string | null; created_at: string; }
-interface Invoice { id: number; account_type: string; invoice_number: string; order_id: number | null; status: string; total: string; issue_date: string | null; created_at: string; }
+interface Invoice { id: number; account_type: string; invoice_number: string | null; cancelled_invoice_number: string | null; order_id: number | null; status: string; total: string; issue_date: string | null; created_at: string; }
 interface Payment { id: number; account_type: string; payment_number: string; order_id: number | null; method: string; status: string; amount: string; created_at: string; }
 interface Summary {
   quotation_count: number;
@@ -245,7 +246,7 @@ export default function CustomerDetailPage() {
         {
           name: "ใบแจ้งหนี้",
           data: data.invoices.map((iv) => ({
-            invoice_number: iv.invoice_number,
+            invoice_number: invoiceDisplayNumber(iv),
             account_label: acc(iv.account_type),
             status_label: INVOICE_STATUS[iv.status]?.label || iv.status,
             total: Number(iv.total),
@@ -466,7 +467,7 @@ export default function CustomerDetailPage() {
                 <tbody className="divide-y divide-gray-100">
                   {data.invoices.map((iv) => (
                     <tr key={iv.id} className="hover:bg-gray-50 transition-colors">
-                      <td className={`${tdClass} font-medium text-gray-700`}>{iv.invoice_number}</td>
+                      <td className={`${tdClass} font-medium text-gray-700`}>{invoiceDisplayNumber(iv)}</td>
                       <td className={tdClass}><AccountBadge type={iv.account_type} /></td>
                       <td className={tdClass}><Badge map={INVOICE_STATUS} status={iv.status} /></td>
                       <td className={`${tdClass} text-right text-gray-700`}>฿{fmt(iv.total)}</td>

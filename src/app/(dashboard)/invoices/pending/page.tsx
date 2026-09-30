@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import Header from "@/components/Header";
 import { useAuth } from "@/lib/auth-context";
 import { api, ApiError } from "@/lib/api";
+import { InvoiceNumberField, useNextInvoiceNumber } from "@/components/InvoiceNumberField";
 
 interface PendingRow {
   order_id: number;
@@ -41,6 +42,7 @@ export default function PendingInvoicesPage() {
   const [error, setError] = useState("");
   const [issuingRow, setIssuingRow] = useState<PendingRow | null>(null);
   const [issueDate, setIssueDate] = useState("");
+  const invoiceNumber = useNextInvoiceNumber();
 
   const fetchData = useCallback(async () => {
     if (!token) return;
@@ -89,7 +91,7 @@ export default function PendingInvoicesPage() {
     setIssuing(issuingRow.order_id);
     setError("");
     try {
-      await api.post(`/orders/${issuingRow.order_id}/invoices`, { issue_date: issueDate || undefined }, token);
+      await api.post(`/orders/${issuingRow.order_id}/invoices`, { issue_date: issueDate || undefined, ...invoiceNumber.payload() }, token);
       setIssuingRow(null);
       await fetchData();
     } catch (e) {
@@ -231,7 +233,7 @@ export default function PendingInvoicesPage() {
                           </button>
                         ) : (
                           <button
-                            onClick={() => { setIssuingRow(r); setIssueDate(new Date().toISOString().split("T")[0]); }}
+                            onClick={() => { setIssuingRow(r); setIssueDate(new Date().toISOString().split("T")[0]); invoiceNumber.load(); }}
                             disabled={issuing === r.order_id}
                             className="px-3 py-1.5 text-xs text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
                           >
@@ -256,7 +258,9 @@ export default function PendingInvoicesPage() {
               <h3 className="font-semibold text-gray-800">ออก{docLabel}</h3>
               <p className="text-sm text-gray-500 mt-1">{issuingRow.order_number} — {issuingRow.customer?.name}</p>
             </div>
-            <div className="p-5">
+            <div className="p-5 space-y-4">
+              <InvoiceNumberField state={invoiceNumber} label={docLabel} />
+              <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">วันที่ออก{docLabel}</label>
               <input
                 type="date"
@@ -265,10 +269,11 @@ export default function PendingInvoicesPage() {
                 onChange={(e) => setIssueDate(e.target.value)}
                 className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none text-sm"
               />
+              </div>
             </div>
             <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-200">
               <button onClick={() => setIssuingRow(null)} className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">ยกเลิก</button>
-              <button onClick={handleIssue} disabled={issuing === issuingRow.order_id || !issueDate} className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50">
+              <button onClick={handleIssue} disabled={issuing === issuingRow.order_id || !issueDate || invoiceNumber.loading || (invoiceNumber.canEdit && !invoiceNumber.value.trim())} className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50">
                 {issuing === issuingRow.order_id ? "กำลังออก..." : "ยืนยันออก" + docLabel}
               </button>
             </div>

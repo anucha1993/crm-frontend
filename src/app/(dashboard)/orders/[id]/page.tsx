@@ -6,6 +6,7 @@ import Header from "@/components/Header";
 import ProductSearchSelect from "@/components/ProductSearchSelect";
 import { useAuth } from "@/lib/auth-context";
 import { api, ApiError } from "@/lib/api";
+import { InvoiceNumberField, useNextInvoiceNumber, invoiceDisplayNumber } from "@/components/InvoiceNumberField";
 
 interface Product {
   id: number;
@@ -134,7 +135,8 @@ interface RemainingItem {
 
 interface OrderInvoice {
   id: number;
-  invoice_number: string;
+  invoice_number: string | null;
+  cancelled_invoice_number?: string | null;
   status: string;
   issue_date: string;
   total: string;
@@ -229,6 +231,7 @@ export default function OrderDetailPage() {
   const [invoiceCreating, setInvoiceCreating] = useState(false);
   const [showInvoiceDateModal, setShowInvoiceDateModal] = useState(false);
   const [invoiceIssueDate, setInvoiceIssueDate] = useState("");
+  const invoiceNumber = useNextInvoiceNumber();
   const [cancellingInvoice, setCancellingInvoice] = useState<OrderInvoice | null>(null);
   const [cancelInvoiceReason, setCancelInvoiceReason] = useState("");
 
@@ -616,7 +619,7 @@ export default function OrderDetailPage() {
     if (!token || !order) return;
     setInvoiceCreating(true);
     try {
-      await api.post(`/orders/${order.id}/invoices`, { issue_date: invoiceIssueDate || undefined }, token);
+      await api.post(`/orders/${order.id}/invoices`, { issue_date: invoiceIssueDate || undefined, ...invoiceNumber.payload() }, token);
       setShowInvoiceDateModal(false);
       fetchOrder();
       fetchTimeline();
@@ -1257,7 +1260,7 @@ export default function OrderDetailPage() {
                   <h3 className="text-sm font-semibold text-gray-800">{invoiceLabel}</h3>
                   {order.status !== "cancelled" && (Number(order.remaining_amount) === 0 || order.customer?.is_credit) && !order.invoices?.some(inv => inv.status === "issued") && (
                     <button
-                      onClick={() => { setInvoiceIssueDate(new Date().toISOString().split("T")[0]); setShowInvoiceDateModal(true); }}
+                      onClick={() => { setInvoiceIssueDate(new Date().toISOString().split("T")[0]); setShowInvoiceDateModal(true); invoiceNumber.load(); }}
                       disabled={invoiceCreating}
                       className="flex items-center gap-1 px-3 py-1.5 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
                     >
@@ -1290,7 +1293,7 @@ export default function OrderDetailPage() {
                           <div className="flex items-start justify-between">
                             <div className="flex-1">
                               <div className="flex items-center gap-2 mb-1">
-                                <span className="font-mono text-xs text-gray-700">{inv.invoice_number}</span>
+                                <span className={`font-mono text-xs ${inv.status === "cancelled" ? "text-gray-400 line-through" : "text-gray-700"}`}>{invoiceDisplayNumber(inv)}</span>
                                 <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${ist.color}`}>{ist.label}</span>
                               </div>
                               <div className="flex items-center gap-4 text-sm">
@@ -1921,7 +1924,7 @@ export default function OrderDetailPage() {
             <div className="bg-white rounded-xl shadow-xl w-full max-w-sm">
               <div className="px-5 py-4 border-b border-gray-200">
                 <h3 className="font-semibold text-gray-800">ยกเลิกใบกำกับภาษี</h3>
-                <p className="text-sm text-gray-500 mt-1">{cancellingInvoice.invoice_number}</p>
+                <p className="text-sm text-gray-500 mt-1">{invoiceDisplayNumber(cancellingInvoice)}</p>
               </div>
               <div className="p-5">
                 <label className="block text-sm font-medium text-gray-700 mb-1">เหตุผล</label>
@@ -1949,7 +1952,9 @@ export default function OrderDetailPage() {
                 <h3 className="font-semibold text-gray-800">{invoiceVerb}</h3>
                 <p className="text-sm text-gray-500 mt-1">{order?.order_number}</p>
               </div>
-              <div className="p-5">
+              <div className="p-5 space-y-4">
+                <InvoiceNumberField state={invoiceNumber} label={invoiceLabel} />
+                <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">วันที่ออก{invoiceLabel}</label>
                 <input
                   type="date"
@@ -1958,10 +1963,11 @@ export default function OrderDetailPage() {
                   onChange={(e) => setInvoiceIssueDate(e.target.value)}
                   className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none text-sm"
                 />
+                </div>
               </div>
               <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-200">
                 <button onClick={() => setShowInvoiceDateModal(false)} className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">ยกเลิก</button>
-                <button onClick={handleCreateInvoice} disabled={invoiceCreating || !invoiceIssueDate} className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50">
+                <button onClick={handleCreateInvoice} disabled={invoiceCreating || !invoiceIssueDate || invoiceNumber.loading || (invoiceNumber.canEdit && !invoiceNumber.value.trim())} className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50">
                   {invoiceCreating ? "กำลังออก..." : "ยืนยันออก" + invoiceLabel}
                 </button>
               </div>
