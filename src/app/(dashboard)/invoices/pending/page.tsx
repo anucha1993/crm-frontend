@@ -233,7 +233,7 @@ export default function PendingInvoicesPage() {
                           </button>
                         ) : (
                           <button
-                            onClick={() => { setIssuingRow(r); setIssueDate(new Date().toISOString().split("T")[0]); invoiceNumber.load(); }}
+                            onClick={() => { setIssuingRow(r); setIssueDate(new Date().toISOString().split("T")[0]); if (!isCash) invoiceNumber.load(); }}
                             disabled={issuing === r.order_id}
                             className="px-3 py-1.5 text-xs text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
                           >
@@ -259,7 +259,7 @@ export default function PendingInvoicesPage() {
               <p className="text-sm text-gray-500 mt-1">{issuingRow.order_number} — {issuingRow.customer?.name}</p>
             </div>
             <div className="p-5 space-y-4">
-              <InvoiceNumberField state={invoiceNumber} label={docLabel} />
+              {!isCash && <InvoiceNumberField state={invoiceNumber} label={docLabel} />}
               <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">วันที่ออก{docLabel}</label>
               <input
@@ -273,7 +273,7 @@ export default function PendingInvoicesPage() {
             </div>
             <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-200">
               <button onClick={() => setIssuingRow(null)} className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">ยกเลิก</button>
-              <button onClick={handleIssue} disabled={issuing === issuingRow.order_id || !issueDate || invoiceNumber.loading || (invoiceNumber.canEdit && !invoiceNumber.value.trim())} className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50">
+              <button onClick={handleIssue} disabled={issuing === issuingRow.order_id || !issueDate || (!isCash && (invoiceNumber.loading || (invoiceNumber.canEdit && !invoiceNumber.value.trim())))} className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50">
                 {issuing === issuingRow.order_id ? "กำลังออก..." : "ยืนยันออก" + docLabel}
               </button>
             </div>

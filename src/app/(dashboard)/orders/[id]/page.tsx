@@ -1260,7 +1260,7 @@ export default function OrderDetailPage() {
                   <h3 className="text-sm font-semibold text-gray-800">{invoiceLabel}</h3>
                   {order.status !== "cancelled" && (Number(order.remaining_amount) === 0 || order.customer?.is_credit) && !order.invoices?.some(inv => inv.status === "issued") && (
                     <button
-                      onClick={() => { setInvoiceIssueDate(new Date().toISOString().split("T")[0]); setShowInvoiceDateModal(true); invoiceNumber.load(); }}
+                      onClick={() => { setInvoiceIssueDate(new Date().toISOString().split("T")[0]); setShowInvoiceDateModal(true); if (!isCash) invoiceNumber.load(); }}
                       disabled={invoiceCreating}
                       className="flex items-center gap-1 px-3 py-1.5 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
                     >
@@ -1953,7 +1953,7 @@ export default function OrderDetailPage() {
                 <p className="text-sm text-gray-500 mt-1">{order?.order_number}</p>
               </div>
               <div className="p-5 space-y-4">
-                <InvoiceNumberField state={invoiceNumber} label={invoiceLabel} />
+                {!isCash && <InvoiceNumberField state={invoiceNumber} label={invoiceLabel} />}
                 <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">วันที่ออก{invoiceLabel}</label>
                 <input
@@ -1967,7 +1967,7 @@ export default function OrderDetailPage() {
               </div>
               <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-200">
                 <button onClick={() => setShowInvoiceDateModal(false)} className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">ยกเลิก</button>
-                <button onClick={handleCreateInvoice} disabled={invoiceCreating || !invoiceIssueDate || invoiceNumber.loading || (invoiceNumber.canEdit && !invoiceNumber.value.trim())} className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50">
+                <button onClick={handleCreateInvoice} disabled={invoiceCreating || !invoiceIssueDate || (!isCash && (invoiceNumber.loading || (invoiceNumber.canEdit && !invoiceNumber.value.trim())))} className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50">
                   {invoiceCreating ? "กำลังออก..." : "ยืนยันออก" + invoiceLabel}
                 </button>
               </div>

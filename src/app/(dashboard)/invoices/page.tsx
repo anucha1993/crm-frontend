@@ -42,7 +42,8 @@ export default function InvoicesPage() {
 
   const canViewAll = hasPermission("records.view_all");
   const canEditDate = hasPermission("invoices.create");
-  const canEditNumber = hasPermission("invoices.edit_number");
+  // Cash bills have no invoice number, so there is nothing to edit.
+  const canEditNumber = !isCash && hasPermission("invoices.edit_number");
   const canEdit = canEditDate || canEditNumber;
 
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
@@ -211,7 +212,7 @@ export default function InvoicesPage() {
                         <td className="px-5 py-4 text-right">
                           <div className="flex items-center justify-end gap-1">
                             {canEdit && inv.status !== "cancelled" && (
-                              <button onClick={() => openEditDate(inv)} className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors" title="แก้ไขเลขที่ / วันที่ออก">
+                              <button onClick={() => openEditDate(inv)} className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors" title={isCash ? "แก้ไขวันที่ออก" : "แก้ไขเลขที่ / วันที่ออก"}>
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                               </button>
                             )}
@@ -259,12 +260,12 @@ export default function InvoicesPage() {
           <div className="bg-white rounded-xl shadow-xl w-full max-w-sm">
             <div className="px-5 py-4 border-b border-gray-200">
               <h3 className="font-semibold text-gray-800">แก้ไข{docLabel}</h3>
-              <p className="text-sm text-gray-500 mt-1">{editingInvoice.invoice_number}</p>
+              <p className="text-sm text-gray-500 mt-1">{editingInvoice.order?.order_number ?? invoiceDisplayNumber(editingInvoice)}</p>
             </div>
             <div className="p-5">
               {editError && <div className="bg-red-50 text-red-600 text-sm px-3 py-2 rounded-lg mb-3">{editError}</div>}
               <div className="space-y-4">
-                <div>
+                {!isCash && <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">เลขที่{docLabel}</label>
                   <input
                     type="text"
@@ -275,7 +276,7 @@ export default function InvoicesPage() {
                     className={`w-full px-3 py-2 rounded-lg border border-gray-300 font-mono text-sm outline-none ${canEditNumber ? "focus:ring-2 focus:ring-green-500 focus:border-green-500" : "bg-gray-50 text-gray-500"}`}
                   />
                   {!canEditNumber && <p className="text-xs text-gray-400 mt-1">ไม่มีสิทธิ์แก้ไขเลขที่</p>}
-                </div>
+                </div>}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">วันที่ออก</label>
                   <input
