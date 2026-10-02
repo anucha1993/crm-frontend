@@ -179,7 +179,7 @@ const navItems: NavItem[] = [
       </svg>
     ),
     children: [
-      { href: "/reports/sales-by-seller", label: "ยอดขายตามผู้ขาย" },
+      { href: "/reports/sales-by-seller", label: "ประสิทธิภาพผู้ขาย" },
       { href: "/reports/sales-by-customer", label: "ยอดขายตามลูกค้า" },
       { href: "/reports/sales-by-product", label: "ยอดขายตามสินค้า" },
       { href: "/reports/monthly-sales", label: "ยอดขายรายเดือน" },
