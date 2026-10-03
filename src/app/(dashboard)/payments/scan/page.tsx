@@ -49,6 +49,13 @@ interface PaymentDetail {
   created_at: string;
 }
 
+type OrderInfo = NonNullable<PaymentDetail["order"]>;
+
+type UnpaidOrder = OrderInfo & {
+  created_at: string;
+  creator: { id: number; name: string } | null;
+};
+
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
   pending: { label: "รอยืนยัน", color: "bg-yellow-50 text-yellow-700 border-yellow-200" },
   approved: { label: "อนุมัติแล้ว", color: "bg-green-50 text-green-700 border-green-200" },
@@ -229,6 +236,8 @@ export default function PaymentScanPage() {
   const [loading, setLoading] = useState(false);
   const [payment, setPayment] = useState<PaymentDetail | null>(null);
   const [orderPending, setOrderPending] = useState<PendingByOrder | null>(null);
+  // Order found by number but no payment has been submitted for it yet
+  const [unpaidOrder, setUnpaidOrder] = useState<UnpaidOrder | null>(null);
   // IDs of pending payments the user has ticked for approval. When ALL rows are
   // ticked, we approve the whole order in one call (no payment_ids body).
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -261,6 +270,7 @@ export default function PaymentScanPage() {
     setError("");
     setPayment(null);
     setOrderPending(null);
+    setUnpaidOrder(null);
     try {
       let searchTerm = query.trim();
 
@@ -291,13 +301,14 @@ export default function PaymentScanPage() {
         // instead of a generic "not found".
         if (/^ORD-/i.test(searchTerm)) {
           try {
-            const ord = await api.get<{ data: { id: number; order_number: string; remaining_amount: string }[] }>(
-              `/orders?search=${encodeURIComponent(searchTerm)}&per_page=1`,
+            const ord = await api.get<{ data: { id: number; order_number: string }[] }>(
+              `/orders?search=${encodeURIComponent(searchTerm)}&per_page=5`,
               token,
             );
             const o = ord.data.find((x) => x.order_number.toLowerCase() === searchTerm.toLowerCase());
             if (o) {
-              setError(`คำสั่งซื้อ ${o.order_number} ยังไม่มีการแจ้งชำระเงิน (ยอดคงเหลือ ${Number(o.remaining_amount).toLocaleString("th-TH", { minimumFractionDigits: 2 })} บาท)`);
+              const detail = await api.get<{ order: UnpaidOrder }>(`/orders/${o.id}`, token);
+              setUnpaidOrder(detail.order);
               return;
             }
           } catch { /* fall through to generic message */ }
@@ -525,6 +536,83 @@ export default function PaymentScanPage() {
     return () => { stopScanning(); };
   }, []);
 
+  const renderOrderInfo = (order: OrderInfo) => (
+      <div className="bg-white rounded-xl border border-gray-200 p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h4 className="text-sm font-semibold text-gray-800">ข้อมูลคำสั่งซื้อ</h4>
+          <span className="text-xs text-gray-500">{ORDER_STATUS_MAP[order.status] || order.status}</span>
+        </div>
+        <div className="grid grid-cols-2 gap-3 text-sm mb-4">
+          <div>
+            <span className="text-gray-500">เลขที่คำสั่งซื้อ</span>
+            <p className="font-mono font-medium text-gray-800">{order.order_number}</p>
+          </div>
+          <div>
+            <span className="text-gray-500">ลูกค้า</span>
+            <p className="font-medium text-gray-800">{order.customer?.name || "-"}</p>
+          </div>
+          <div>
+            <span className="text-gray-500">ยอดรวม</span>
+            <p className="font-medium text-gray-800">{formatCurrency(order.total)} บาท</p>
+          </div>
+          <div>
+            <span className="text-gray-500">ชำระแล้ว</span>
+            <p className="font-medium text-green-600">{formatCurrency(order.paid_amount)} บาท</p>
+          </div>
+          <div className="col-span-2">
+            <span className="text-gray-500">คงเหลือ</span>
+            <p className="font-bold text-lg text-red-600">{formatCurrency(order.remaining_amount)} บาท</p>
+          </div>
+        </div>
+
+        {/* Order items */}
+        {order.items.length > 0 && (
+          <>
+            <h5 className="text-xs font-medium text-gray-500 mb-2 mt-3">รายการสินค้า</h5>
+            <div className="border border-gray-100 rounded-lg overflow-hidden">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-100">
+                    <th className="text-left px-3 py-2 font-medium text-gray-500">รายการ</th>
+                    <th className="text-right px-3 py-2 font-medium text-gray-500">จำนวน</th>
+                    <th className="text-right px-3 py-2 font-medium text-gray-500">รวม</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {order.items.map((item) => {
+                    const hasLen = item.length != null && Number(item.length) > 0;
+                    const hasThk = item.thickness != null && Number(item.thickness) > 0;
+                    return (
+                    <tr key={item.id}>
+                      <td className="px-3 py-2 text-gray-800">
+                        <div className="font-medium">{item.product?.name || item.description || "-"}</div>
+                        {(item.product?.code || (item.description && item.description !== item.product?.name)) && (
+                          <div className="text-[11px] text-gray-400">
+                            {item.product?.code || ""}
+                            {item.description && item.description !== item.product?.name ? `${item.product?.code ? " — " : ""}${item.description}` : ""}
+                          </div>
+                        )}
+                        {(hasLen || hasThk) && (
+                          <div className="text-[11px] text-gray-500 mt-0.5">
+                            {hasLen && <>ความยาว: {Number(item.length).toLocaleString()}</>}
+                            {hasLen && hasThk && " · "}
+                            {hasThk && <>ความกว้าง: {Number(item.thickness).toLocaleString()}</>}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right text-gray-600">{Number(item.quantity).toLocaleString()} {item.unit}</td>
+                      <td className="px-3 py-2 text-right font-medium text-gray-800">{formatCurrency(item.amount)}</td>
+                    </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </div>
+  );
+
   return (
     <>
       <Header title="การชำระเงิน" />
@@ -608,6 +696,57 @@ export default function PaymentScanPage() {
             <div className="mt-3 px-3 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg">{error}</div>
           )}
         </div>
+
+        {/* Order found but no payment submitted yet */}
+        {unpaidOrder && (
+          <div className="space-y-4">
+            <div className="bg-white rounded-xl border-2 border-red-400 p-5">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-lg font-bold text-gray-800">{unpaidOrder.order_number}</h3>
+                  <p className="text-sm text-gray-500">{unpaidOrder.customer?.name || "-"}</p>
+                </div>
+                <span className="inline-flex px-3 py-1 rounded-full text-sm font-medium border bg-red-50 text-red-600 border-red-300">
+                  ยังไม่มีการแจ้งชำระเงิน
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span className="text-gray-500">ยอดที่ต้องชำระ</span>
+                  <p className="text-2xl font-bold text-red-600">{formatCurrency(unpaidOrder.remaining_amount)} <span className="text-sm font-normal">บาท</span></p>
+                </div>
+                <div>
+                  <span className="text-gray-500">วันที่สั่งซื้อ</span>
+                  <p className="font-medium text-gray-800">{formatDate(unpaidOrder.created_at)}</p>
+                </div>
+                <div>
+                  <span className="text-gray-500">สร้างโดย</span>
+                  <p className="font-medium text-gray-800">{unpaidOrder.creator?.name || "-"}</p>
+                </div>
+              </div>
+              <div className="mt-4 px-3 py-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg">
+                คำสั่งซื้อนี้ยังไม่มีการแจ้งชำระเงิน จึงยังไม่มีรายการให้อนุมัติ
+              </div>
+              <a
+                href={`/orders/${unpaidOrder.id}`}
+                className="mt-3 block w-full text-center px-4 py-2.5 text-sm border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium"
+              >
+                ไปที่คำสั่งซื้อเพื่อแจ้งชำระเงิน
+              </a>
+            </div>
+
+            {renderOrderInfo(unpaidOrder)}
+
+            <div className="text-center">
+              <button
+                onClick={() => { setUnpaidOrder(null); setManualInput(""); setError(""); }}
+                className="text-sm text-blue-600 hover:underline"
+              >
+                ค้นหารายการอื่น
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Payment result */}
         {payment && (
@@ -773,82 +912,7 @@ export default function PaymentScanPage() {
             })()}
 
             {/* Order info */}
-            {payment.order && (
-              <div className="bg-white rounded-xl border border-gray-200 p-5">
-                <div className="flex items-center justify-between mb-3">
-                  <h4 className="text-sm font-semibold text-gray-800">ข้อมูลคำสั่งซื้อ</h4>
-                  <span className="text-xs text-gray-500">{ORDER_STATUS_MAP[payment.order.status] || payment.order.status}</span>
-                </div>
-                <div className="grid grid-cols-2 gap-3 text-sm mb-4">
-                  <div>
-                    <span className="text-gray-500">เลขที่คำสั่งซื้อ</span>
-                    <p className="font-mono font-medium text-gray-800">{payment.order.order_number}</p>
-                  </div>
-                  <div>
-                    <span className="text-gray-500">ลูกค้า</span>
-                    <p className="font-medium text-gray-800">{payment.order.customer?.name || "-"}</p>
-                  </div>
-                  <div>
-                    <span className="text-gray-500">ยอดรวม</span>
-                    <p className="font-medium text-gray-800">{formatCurrency(payment.order.total)} บาท</p>
-                  </div>
-                  <div>
-                    <span className="text-gray-500">ชำระแล้ว</span>
-                    <p className="font-medium text-green-600">{formatCurrency(payment.order.paid_amount)} บาท</p>
-                  </div>
-                  <div className="col-span-2">
-                    <span className="text-gray-500">คงเหลือ</span>
-                    <p className="font-bold text-lg text-red-600">{formatCurrency(payment.order.remaining_amount)} บาท</p>
-                  </div>
-                </div>
-
-                {/* Order items */}
-                {payment.order.items.length > 0 && (
-                  <>
-                    <h5 className="text-xs font-medium text-gray-500 mb-2 mt-3">รายการสินค้า</h5>
-                    <div className="border border-gray-100 rounded-lg overflow-hidden">
-                      <table className="w-full text-xs">
-                        <thead>
-                          <tr className="bg-gray-50 border-b border-gray-100">
-                            <th className="text-left px-3 py-2 font-medium text-gray-500">รายการ</th>
-                            <th className="text-right px-3 py-2 font-medium text-gray-500">จำนวน</th>
-                            <th className="text-right px-3 py-2 font-medium text-gray-500">รวม</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
-                          {payment.order.items.map((item) => {
-                            const hasLen = item.length != null && Number(item.length) > 0;
-                            const hasThk = item.thickness != null && Number(item.thickness) > 0;
-                            return (
-                            <tr key={item.id}>
-                              <td className="px-3 py-2 text-gray-800">
-                                <div className="font-medium">{item.product?.name || item.description || "-"}</div>
-                                {(item.product?.code || (item.description && item.description !== item.product?.name)) && (
-                                  <div className="text-[11px] text-gray-400">
-                                    {item.product?.code || ""}
-                                    {item.description && item.description !== item.product?.name ? `${item.product?.code ? " — " : ""}${item.description}` : ""}
-                                  </div>
-                                )}
-                                {(hasLen || hasThk) && (
-                                  <div className="text-[11px] text-gray-500 mt-0.5">
-                                    {hasLen && <>ความยาว: {Number(item.length).toLocaleString()}</>}
-                                    {hasLen && hasThk && " · "}
-                                    {hasThk && <>ความกว้าง: {Number(item.thickness).toLocaleString()}</>}
-                                  </div>
-                                )}
-                              </td>
-                              <td className="px-3 py-2 text-right text-gray-600">{Number(item.quantity).toLocaleString()} {item.unit}</td>
-                              <td className="px-3 py-2 text-right font-medium text-gray-800">{formatCurrency(item.amount)}</td>
-                            </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
+            {payment.order && renderOrderInfo(payment.order)}
 
             {/* Feature #3: all pending slips awaiting approval for this order */}
             {orderPending && orderPending.pending_payments.length > 0 && (
