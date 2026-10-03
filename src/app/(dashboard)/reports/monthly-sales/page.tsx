@@ -5,6 +5,7 @@ import Header from "@/components/Header";
 import { useAuth } from "@/lib/auth-context";
 import { api } from "@/lib/api";
 import { exportToExcel } from "@/lib/export-excel";
+import Link from "next/link";
 
 interface MonthData {
   month: number;
@@ -23,6 +24,25 @@ interface SalesData {
   year_total: number;
 }
 
+interface OrderRow {
+  id: number;
+  order_number: string;
+  status: string;
+  total: string;
+  paid_amount: string;
+  remaining_amount: string;
+  created_at: string;
+  customer?: { id: number; name: string; code: string } | null;
+  creator?: { id: number; name: string } | null;
+}
+
+const STATUS_LABEL: Record<string, string> = {
+  pending: "รอดำเนินการ",
+  in_progress: "อยู่ระหว่างดำเนินการ",
+  completed: "คำสั่งซื้อสำเร็จ",
+  cancelled: "ยกเลิก",
+};
+
 const thaiMonthNames = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
 
 export default function MonthlySalesPage() {
@@ -31,6 +51,10 @@ export default function MonthlySalesPage() {
   const [year, setYear] = useState(currentYear);
   const [data, setData] = useState<SalesData | null>(null);
   const [loading, setLoading] = useState(true);
+  // month = null means whole year
+  const [drill, setDrill] = useState<{ month: number | null } | null>(null);
+  const [orders, setOrders] = useState<OrderRow[]>([]);
+  const [ordersLoading, setOrdersLoading] = useState(false);
 
   useEffect(() => {
     if (!token) return;
@@ -40,6 +64,47 @@ export default function MonthlySalesPage() {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [token, year]);
+
+  useEffect(() => {
+    if (!token || !drill) return;
+    setOrdersLoading(true);
+    setOrders([]);
+    const q = `year=${year}` + (drill.month ? `&month=${drill.month}` : "");
+    api.get<{ orders: OrderRow[] }>(`/reports/monthly-sales/orders?${q}`, token)
+      .then((r) => setOrders(r.orders))
+      .catch(() => {})
+      .finally(() => setOrdersLoading(false));
+  }, [token, year, drill]);
+
+  const drillLabel = drill ? (drill.month ? `${thaiMonthNames[drill.month - 1]} ${year + 543}` : `ทั้งปี ${year + 543}`) : "";
+  const fmtDate = (d: string) => new Date(d).toLocaleDateString("th-TH", { year: "numeric", month: "short", day: "numeric" });
+
+  const exportOrders = () => exportToExcel(
+    orders.map((o) => ({
+      created_at: fmtDate(o.created_at),
+      order_number: o.order_number,
+      customer_code: o.customer?.code ?? "",
+      customer_name: o.customer?.name ?? "",
+      status: STATUS_LABEL[o.status] ?? o.status,
+      total: o.total,
+      paid_amount: o.paid_amount,
+      remaining_amount: o.remaining_amount,
+      creator: o.creator?.name ?? "",
+    })) as unknown as Record<string, unknown>[],
+    [
+      { header: 'วันที่', key: 'created_at', width: 14 },
+      { header: 'เลขที่คำสั่งซื้อ', key: 'order_number', width: 20 },
+      { header: 'รหัสลูกค้า', key: 'customer_code', width: 14 },
+      { header: 'ชื่อลูกค้า', key: 'customer_name', width: 30 },
+      { header: 'สถานะ', key: 'status', width: 18 },
+      { header: 'ยอดรวม', key: 'total', width: 16, format: (v) => Number(v) },
+      { header: 'ชำระแล้ว', key: 'paid_amount', width: 16, format: (v) => Number(v) },
+      { header: 'ค้างชำระ', key: 'remaining_amount', width: 16, format: (v) => Number(v) },
+      { header: 'ผู้สร้าง', key: 'creator', width: 18 },
+    ],
+    `คำสั่งซื้อ_${drillLabel.replace(/\s+/g, "_")}`,
+    drillLabel
+  );
 
   const fmt = (v: string | number) => Number(v).toLocaleString("th-TH", { minimumFractionDigits: 2 });
   const thaiMonths = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
@@ -179,7 +244,12 @@ export default function MonthlySalesPage() {
                     const prevSalesVal = Number(prevYear[String(m.month)] ?? 0);
                     const growth = prevSalesVal > 0 ? ((Number(m.total_sales) - prevSalesVal) / prevSalesVal) * 100 : 0;
                     return (
-                      <tr key={m.month} className="hover:bg-gray-50">
+                      <tr
+                        key={m.month}
+                        onClick={() => m.order_count > 0 && setDrill({ month: m.month })}
+                        className={m.order_count > 0 ? "hover:bg-green-50 cursor-pointer" : ""}
+                        title={m.order_count > 0 ? "คลิกเพื่อดูรายการคำสั่งซื้อ" : undefined}
+                      >
                         <td className="px-4 py-2.5 font-medium text-gray-800">{thaiMonthNames[i]}</td>
                         <td className="px-4 py-2.5 text-right text-gray-600">{m.order_count}</td>
                         <td className="px-4 py-2.5 text-right font-medium">฿{fmt(m.total_sales)}</td>
@@ -200,7 +270,11 @@ export default function MonthlySalesPage() {
                   })}
                 </tbody>
                 <tfoot className="bg-gray-50 font-semibold">
-                  <tr>
+                  <tr
+                    onClick={() => totalOrders > 0 && setDrill({ month: null })}
+                    className={totalOrders > 0 ? "hover:bg-green-50 cursor-pointer" : ""}
+                    title={totalOrders > 0 ? "คลิกเพื่อดูคำสั่งซื้อทั้งปี" : undefined}
+                  >
                     <td className="px-4 py-3">รวมทั้งปี</td>
                     <td className="px-4 py-3 text-right">{totalOrders}</td>
                     <td className="px-4 py-3 text-right">฿{fmt(totalSales)}</td>
@@ -212,11 +286,83 @@ export default function MonthlySalesPage() {
                 </tfoot>
               </table>
             </div>
+            <p className="text-xs text-gray-400">* คลิกที่แถวเดือนเพื่อดูรายการคำสั่งซื้อ</p>
           </>
         ) : (
           <div className="text-center text-gray-400 py-12">ไม่สามารถโหลดข้อมูลได้</div>
         )}
       </div>
+
+      {drill && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setDrill(null)}>
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-6xl max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-3 px-6 py-4 border-b border-gray-200">
+              <h3 className="text-base font-semibold text-gray-800">คำสั่งซื้อ {drillLabel}</h3>
+              {!ordersLoading && <span className="text-sm text-gray-400">({orders.length} รายการ)</span>}
+              <button
+                onClick={exportOrders}
+                disabled={ordersLoading || orders.length === 0}
+                className="ml-auto px-4 py-1.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                Export Excel
+              </button>
+              <button onClick={() => setDrill(null)} className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100" aria-label="ปิด">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+            <div className="overflow-auto">
+              {ordersLoading ? (
+                <div className="text-center text-gray-400 py-12">กำลังโหลด...</div>
+              ) : orders.length === 0 ? (
+                <div className="text-center text-gray-400 py-12">ไม่มีคำสั่งซื้อ</div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr>
+                      <th className="text-left px-4 py-3 font-medium text-gray-500">วันที่</th>
+                      <th className="text-left px-4 py-3 font-medium text-gray-500">เลขที่</th>
+                      <th className="text-left px-4 py-3 font-medium text-gray-500">ลูกค้า</th>
+                      <th className="text-left px-4 py-3 font-medium text-gray-500">สถานะ</th>
+                      <th className="text-right px-4 py-3 font-medium text-gray-500">ยอดรวม</th>
+                      <th className="text-right px-4 py-3 font-medium text-gray-500">ชำระแล้ว</th>
+                      <th className="text-right px-4 py-3 font-medium text-gray-500">ค้างชำระ</th>
+                      <th className="text-left px-4 py-3 font-medium text-gray-500">ผู้สร้าง</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {orders.map((o) => (
+                      <tr key={o.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-2.5 text-gray-600 whitespace-nowrap">{fmtDate(o.created_at)}</td>
+                        <td className="px-4 py-2.5 whitespace-nowrap">
+                          <Link href={`/orders/${o.id}`} className="text-blue-600 hover:underline">{o.order_number}</Link>
+                        </td>
+                        <td className="px-4 py-2.5 text-gray-800">
+                          {o.customer ? <>{o.customer.name} <span className="text-xs text-gray-400">{o.customer.code}</span></> : "-"}
+                        </td>
+                        <td className="px-4 py-2.5 text-gray-600 whitespace-nowrap">{STATUS_LABEL[o.status] ?? o.status}</td>
+                        <td className="px-4 py-2.5 text-right font-medium">฿{fmt(o.total)}</td>
+                        <td className="px-4 py-2.5 text-right text-green-600">฿{fmt(o.paid_amount)}</td>
+                        <td className="px-4 py-2.5 text-right text-red-600">฿{fmt(o.remaining_amount)}</td>
+                        <td className="px-4 py-2.5 text-gray-600">{o.creator?.name ?? "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="bg-gray-50 font-semibold">
+                    <tr>
+                      <td className="px-4 py-3" colSpan={4}>รวม</td>
+                      <td className="px-4 py-3 text-right">฿{fmt(orders.reduce((s, o) => s + Number(o.total), 0))}</td>
+                      <td className="px-4 py-3 text-right text-green-600">฿{fmt(orders.reduce((s, o) => s + Number(o.paid_amount), 0))}</td>
+                      <td className="px-4 py-3 text-right text-red-600">฿{fmt(orders.reduce((s, o) => s + Number(o.remaining_amount), 0))}</td>
+                      <td />
+                    </tr>
+                  </tfoot>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
