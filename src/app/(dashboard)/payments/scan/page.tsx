@@ -287,6 +287,21 @@ export default function PaymentScanPage() {
       // Try searching by payment number (or order number)
       const data = await api.get<{ data: PaymentDetail[] }>(`/payments?search=${encodeURIComponent(searchTerm)}&per_page=1`, token);
       if (data.data.length === 0) {
+        // The order may exist but simply has no payment recorded yet — say so
+        // instead of a generic "not found".
+        if (/^ORD-/i.test(searchTerm)) {
+          try {
+            const ord = await api.get<{ data: { id: number; order_number: string; remaining_amount: string }[] }>(
+              `/orders?search=${encodeURIComponent(searchTerm)}&per_page=1`,
+              token,
+            );
+            const o = ord.data.find((x) => x.order_number.toLowerCase() === searchTerm.toLowerCase());
+            if (o) {
+              setError(`คำสั่งซื้อ ${o.order_number} ยังไม่มีการแจ้งชำระเงิน (ยอดคงเหลือ ${Number(o.remaining_amount).toLocaleString("th-TH", { minimumFractionDigits: 2 })} บาท)`);
+              return;
+            }
+          } catch { /* fall through to generic message */ }
+        }
         setError("ไม่พบรายการชำระเงินที่ตรงกับ: " + query.trim());
         return;
       }
