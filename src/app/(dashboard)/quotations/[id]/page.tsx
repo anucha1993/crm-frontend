@@ -40,7 +40,8 @@ export default function QuotationFormPage() {
   const [validUntil, setValidUntil] = useState<string>("");
   const [discountType, setDiscountType] = useState<"percent" | "amount">("amount");
   const [discountValue, setDiscountValue] = useState(0);
-  const [vatRate, setVatRate] = useState(7);
+  // Tax-invoice mode: VAT is fixed at 7% (read-only in the form)
+  const vatRate = 7;
   const [includeVat, setIncludeVat] = useState(false);
   const [items, setItems] = useState<QuotationItem[]>([{ ...emptyItem }]);
   const [quotationNumber, setQuotationNumber] = useState("");
@@ -134,7 +135,6 @@ export default function QuotationFormPage() {
       setValidUntil(q.valid_until ? q.valid_until.slice(0, 10) : "");
       setDiscountType(q.discount_type as "percent" | "amount");
       setDiscountValue(Number(q.discount_value));
-      setVatRate(Number(q.vat_rate));
       setIncludeVat(!isCash && Number(q.vat_rate) > 0);
       setItems(q.items.map(it => ({ id: it.id, product_id: it.product_id, thickness: it.thickness ? Number(it.thickness) : null, length: it.length ? Number(it.length) : null, description: it.description, quantity: Number(it.quantity), unit: it.unit, unit_price: Number(it.unit_price), amount: Number(it.amount) })));
       if (data.linked_order && data.linked_order.status !== 'cancelled') {
@@ -547,7 +547,7 @@ export default function QuotationFormPage() {
                     ) : includeVat ? (
                       <>
                         <div className="flex items-center gap-1">
-                          <input type="number" value={vatRate} onChange={(e) => setVatRate(Number(e.target.value))} className="w-16 px-2 py-1 text-sm text-right border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-green-500" min="0" max="100" step="0.01" />
+                          <input type="number" value={vatRate} readOnly tabIndex={-1} className="w-16 px-2 py-1 text-sm text-right border border-gray-200 rounded-lg outline-none bg-gray-50 text-gray-500 cursor-not-allowed" />
                           <span className="text-xs text-gray-400">%</span>
                         </div>
                         <span className="font-medium">+{formatCurrency(vatAmount)}</span>
