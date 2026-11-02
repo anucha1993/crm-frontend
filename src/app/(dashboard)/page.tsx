@@ -18,7 +18,7 @@ interface DashboardData {
     new_customers: number;
     total_customers: number;
   };
-  sales_trend: { month: string; total: number; count: number }[];
+  sales_trend: { month: string; total: number; deposit: number; count: number }[];
   order_statuses: Record<string, number>;
   payment_methods: { method: string; total: number; count: number }[];
   top_customers: { id: number; name: string; code: string; total_sales: number; order_count: number }[];
@@ -130,18 +130,34 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Sales Trend Chart */}
           <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 p-5">
-            <h3 className="font-semibold text-gray-800 mb-4">ยอดขาย 12 เดือน</h3>
-            {data.sales_trend.length > 0 ? (
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-gray-800">ยอดรับชำระ 12 เดือน</h3>
+              <div className="flex items-center gap-3 text-xs text-gray-500">
+                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-amber-400" />มัดจำ</span>
+                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-green-500" />ชำระเงิน</span>
+              </div>
+            </div>
+            {data.sales_trend.some(t => Number(t.total) > 0) ? (
               <div className="flex gap-1 h-48">
                 {data.sales_trend.map((t) => {
-                  const h = (Number(t.total) / maxTrend) * 100;
+                  const total = Number(t.total);
+                  const deposit = Number(t.deposit);
+                  const h = (total / maxTrend) * 100;
+                  const depositShare = total > 0 ? (deposit / total) * 100 : 0;
                   const monthNum = parseInt(t.month.split("-")[1]);
                   const monthNames = ["", "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
                   return (
                     <div key={t.month} className="flex-1 flex flex-col items-center gap-1">
-                      <span className="text-[10px] text-gray-500 shrink-0">{fmtShort(Number(t.total))}</span>
+                      <span className="text-[10px] text-gray-500 shrink-0">{fmtShort(total)}</span>
                       <div className="flex-1 w-full flex items-end">
-                        <div className="w-full bg-green-500 rounded-t transition-all" style={{ height: `${Math.max(h, 2)}%` }} title={`${t.month}: ${fmt(Number(t.total))} (${t.count} orders)`} />
+                        <div
+                          className="w-full rounded-t overflow-hidden flex flex-col transition-all"
+                          style={{ height: `${total > 0 ? Math.max(h, 2) : 0}%` }}
+                          title={`${t.month}: รวม ${fmt(total)} — มัดจำ ${fmt(deposit)} / ชำระเงิน ${fmt(total - deposit)} (${t.count} รายการ)`}
+                        >
+                          <div className="w-full bg-green-500 flex-1" />
+                          <div className="w-full bg-amber-400" style={{ height: `${depositShare}%` }} />
+                        </div>
                       </div>
                       <span className="text-[10px] text-gray-400 shrink-0">{monthNames[monthNum]}</span>
                     </div>
